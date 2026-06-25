@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0d9488">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>ランドリー報告</title>
+<style>
+  /* ====== 設定で変えやすいテーマ色 ====== */
+  :root{
+    --primary:#0d9488;       /* メインカラー（ティール） */
+    --primary-dark:#0f766e;
+    --primary-light:#ccfbf1;
+    --bg:#f1f5f9;
+    --card:#ffffff;
+    --text:#1e293b;
+    --muted:#64748b;
+    --border:#e2e8f0;
+    --danger:#ef4444;
+    --danger-light:#fee2e2;
+    --warn:#f59e0b;
+    --shadow:0 1px 3px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.04);
+    --tabbar-h:64px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    line-height:1.6;
+    -webkit-text-size-adjust:100%;
+  }
+  .wrap{max-width:560px;margin:0 auto;min-height:100vh;background:var(--bg);}
+
+  /* ====== ヘッダー ====== */
+  .app-header{
+    position:sticky;top:0;z-index:20;
+    background:var(--primary);
+    color:#fff;
+    padding:14px 16px;
+    padding-top:calc(14px + env(safe-area-inset-top));
+    display:none;align-items:center;gap:10px;
+    box-shadow:var(--shadow);
+  }
+  .app-header h1{font-size:18px;margin:0;font-weight:700;letter-spacing:.02em;}
+  .app-header .logo{font-size:22px;}
+
+  /* ====== 画面エリア ====== */
+  main{padding:calc(16px + env(safe-area-inset-top)) 16px 24px;}
+  .view{display:none;animation:fade .2s ease;}
+  .view.active{display:block;}
+  @keyframes fade{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
+
+  .section-title{
+    display:flex;align-items:center;justify-content:space-between;
+    margin:2px 0 10px;
+  }
+  .section-title h2{font-size:17px;margin:0;font-weight:700;}
+  .section-title .count{font-size:13px;color:var(--muted);font-weight:600;}
+
+  /* ====== カード／フォーム ====== */
+  .card{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:14px;
+    box-shadow:var(--shadow);
+    padding:14px 16px;
+    margin-bottom:12px;
+  }
+  .field{margin-bottom:12px;}
+  .field:last-child{margin-bottom:0;}
+  /* 日付＋担当者を横並びに */
+  .row2{display:flex;gap:12px;align-items:flex-start;margin-bottom:12px;}
+  .row2 .field{margin-bottom:0;}
+  .row2 .col-date{flex:0 0 auto;}
+  .row2 .col-staff{flex:1 1 auto;min-width:0;}
+  label.lbl{display:block;font-size:14px;font-weight:700;margin-bottom:4px;color:#334155;}
+  label.lbl .req{color:var(--danger);font-size:12px;margin-left:4px;}
+  label.lbl .opt{color:var(--muted);font-size:12px;font-weight:500;margin-left:4px;}
+
+  input,select,textarea{
+    width:100%;
+    font-size:16px; /* 16px未満だとiOSで自動ズームするため16pxを維持 */
+    font-family:inherit;
+    color:var(--text);
+    background:#fff;
+    border:1.5px solid var(--border);
+    border-radius:10px;
+    padding:10px 12px;
+    outline:none;
+    transition:border-color .15s,box-shadow .15s;
+  }
+  input:focus,select:focus,textarea:focus{
+    border-color:var(--primary);
+    box-shadow:0 0 0 3px var(--primary-light);
+  }
+  textarea{resize:vertical;min-height:48px;}
+  /* 日付は内容に合わせた幅に（横いっぱいにしない） */
+  #f-date{width:auto;min-width:150px;max-width:100%;}
+  select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:40px;}
+
+  .with-unit{position:relative;}
+  .with-unit .unit{position:absolute;right:14px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:15px;font-weight:600;pointer-events:none;}
+  .with-unit.yen input{padding-left:30px;}
+  .with-unit.yen::before{content:"¥";position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:16px;font-weight:700;}
+  .with-unit input{padding-right:40px;}
+
+  /* 種類別の入力行（タオル・洗濯機サイズ共通） */
+  .towel-row,.size-row{display:flex;align-items:center;gap:10px;margin-bottom:6px;}
+  .towel-row:last-child,.size-row:last-child{margin-bottom:0;}
+  .towel-row .towel-name,.size-row .size-name{flex:1;font-size:14px;font-weight:700;color:#334155;}
+  .towel-row .with-unit,.size-row .with-unit{width:120px;flex:none;}
+  .size-badges{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;}
+  .size-price{font-size:12px;font-weight:600;color:var(--muted);}
+  .auto-cost{display:flex;align-items:center;justify-content:space-between;margin-top:8px;padding:8px 12px;background:#f0fdfa;border:1px solid #ccfbf1;border-radius:10px;font-size:13px;font-weight:700;color:#334155;}
+  .auto-cost b{font-size:17px;color:var(--primary-dark);}
+  .stat-row.two{grid-template-columns:1fr 1fr;margin-top:10px;}
+  .stat.total{background:linear-gradient(135deg,#ccfbf1,#f0fdfa);border-color:#99f6e4;}
+  /* 一覧：タオル内訳 */
+  .rec-towels{background:#f8fafc;border-radius:10px;padding:8px 10px;margin-bottom:10px;}
+  .rec-towels .rt-head{display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--muted);font-weight:700;margin-bottom:6px;}
+  .rec-towels .rt-total{color:var(--primary-dark);font-weight:800;}
+  .rec-towels .rt-list{display:flex;flex-wrap:wrap;gap:6px;}
+  .rec-towels .rt-chip{font-size:13px;background:#fff;border:1px solid var(--border);border-radius:8px;padding:3px 9px;color:#334155;font-weight:600;}
+  .rec-towels .rt-chip b{color:#0f172a;font-weight:800;margin:0 1px;}
+  /* 集計：タオル内訳 */
+  .towel-break{margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;}
+  .towel-break .tb-chip{font-size:12px;background:#f0fdfa;border:1px solid #ccfbf1;border-radius:999px;padding:4px 10px;color:#0f766e;font-weight:700;}
+
+  /* ====== ボタン ====== */
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    font-size:16px;font-weight:700;font-family:inherit;
+    border:none;border-radius:12px;
+    padding:14px 18px;
+    cursor:pointer;
+    transition:transform .08s,background .15s,opacity .15s;
+    width:100%;
+  }
+  .btn:active{transform:scale(.98);}
+  .btn-primary{background:var(--primary);color:#fff;box-shadow:0 2px 6px rgba(13,148,136,.3);}
+  .btn-primary:active{background:var(--primary-dark);}
+  .btn-ghost{background:#fff;color:var(--muted);border:1.5px solid var(--border);}
+  .btn-sm{width:auto;padding:8px 14px;font-size:13px;border-radius:10px;}
+  .btn-csv{background:#fff;color:var(--primary);border:1.5px solid var(--primary);}
+
+  /* ====== 編集中バナー ====== */
+  .edit-banner{
+    display:none;align-items:center;justify-content:space-between;gap:10px;
+    background:#fff7ed;border:1.5px solid #fed7aa;color:#9a3412;
+    border-radius:12px;padding:10px 14px;margin-bottom:14px;font-size:13px;font-weight:700;
+  }
+  .edit-banner.show{display:flex;}
+  .edit-banner button{background:none;border:none;color:#9a3412;text-decoration:underline;font-weight:700;font-size:13px;cursor:pointer;padding:4px;}
+
+  /* ====== 記録カード（一覧） ====== */
+  .rec{background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:14px 16px;margin-bottom:12px;}
+  .rec-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;}
+  .rec-date{font-size:15px;font-weight:800;color:#0f172a;}
+  .rec-staff{font-size:13px;color:var(--muted);font-weight:600;}
+  .badge{display:inline-block;background:var(--primary-light);color:var(--primary-dark);font-size:12px;font-weight:800;padding:3px 10px;border-radius:999px;white-space:nowrap;}
+  .rec-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;margin-bottom:10px;}
+  .rec-item{background:#f8fafc;border-radius:10px;padding:8px 10px;}
+  .rec-item .k{font-size:11px;color:var(--muted);font-weight:700;display:block;margin-bottom:1px;}
+  .rec-item .v{font-size:16px;font-weight:800;color:#0f172a;}
+  .rec-item .v small{font-size:12px;font-weight:600;color:var(--muted);margin-left:1px;}
+  .rec-memo{font-size:13px;color:#475569;background:#f8fafc;border-radius:10px;padding:8px 10px;margin-bottom:10px;white-space:pre-wrap;word-break:break-word;}
+  .rec-actions{display:flex;gap:8px;}
+  .rec-actions .btn-sm{flex:1;}
+  .btn-edit{background:#fff;color:var(--primary);border:1.5px solid var(--primary);}
+  .btn-del{background:#fff;color:var(--danger);border:1.5px solid #fecaca;}
+
+  /* ====== 集計 ====== */
+  .month-card{background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:16px;margin-bottom:14px;}
+  .month-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;}
+  .month-title{font-size:16px;font-weight:800;margin:0;color:#0f172a;}
+  .month-total{font-size:13px;font-weight:800;color:var(--primary-dark);white-space:nowrap;}
+  .month-sub{font-size:12px;color:var(--muted);margin:3px 0 2px;}
+  .staff-block{margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);}
+  .staff-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:2px;}
+  .staff-name{font-size:15px;font-weight:800;color:#0f172a;}
+  .staff-total{font-size:12px;font-weight:800;color:var(--primary-dark);background:#f0fdfa;border:1px solid #ccfbf1;border-radius:999px;padding:2px 10px;white-space:nowrap;}
+  .day-row{display:grid;grid-template-columns:1fr auto;gap:1px 8px;padding:6px 0;border-bottom:1px solid #f1f5f9;}
+  .day-row:last-child{border-bottom:none;}
+  .day-date{font-size:14px;font-weight:700;color:#334155;}
+  .day-amt{font-size:15px;font-weight:800;color:var(--primary-dark);text-align:right;}
+  .day-sub{grid-column:1 / -1;font-size:11px;color:var(--muted);}
+  .day-per{grid-column:1 / -1;font-size:12px;font-weight:700;color:var(--primary-dark);margin-top:1px;}
+  .staff-avg{margin-top:8px;padding:8px 10px;background:#f0fdfa;border:1px solid #ccfbf1;border-radius:9px;font-size:12px;font-weight:700;color:var(--primary-dark);}
+  .staff-avg b{font-size:15px;}
+  .staff-avg span{font-weight:600;color:var(--muted);font-size:11px;}
+  /* 集計の切替（全体／担当者別） */
+  .seg{display:flex;gap:6px;background:#eef2f6;border-radius:12px;padding:4px;margin-bottom:14px;}
+  .seg-btn{flex:1;border:none;background:none;font-family:inherit;font-size:13px;font-weight:800;color:var(--muted);padding:9px 8px;border-radius:9px;cursor:pointer;transition:background .15s,color .15s,box-shadow .15s;}
+  .seg-btn.active{background:#fff;color:var(--primary-dark);box-shadow:0 1px 3px rgba(0,0,0,.1);}
+  .stat-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;}
+  .stat{background:linear-gradient(135deg,#f0fdfa,#f8fafc);border:1px solid var(--border);border-radius:12px;padding:12px 8px;text-align:center;}
+  .stat .num{font-size:21px;font-weight:900;color:var(--primary-dark);line-height:1.1;}
+  .stat .num small{font-size:12px;font-weight:700;color:var(--muted);}
+  .stat .lab{font-size:11px;color:var(--muted);font-weight:700;margin-top:4px;}
+  .size-break{margin-top:12px;display:flex;flex-wrap:wrap;gap:6px;}
+  .size-chip{font-size:12px;background:#f1f5f9;border-radius:999px;padding:4px 10px;color:#475569;font-weight:600;}
+
+  /* ====== 空の状態 ====== */
+  .empty{text-align:center;color:var(--muted);padding:48px 20px;}
+  .empty .ico{font-size:46px;margin-bottom:10px;}
+  .empty p{margin:4px 0;font-size:14px;}
+
+  /* ====== タブバー ====== */
+  .tabbar{
+    position:fixed;left:0;right:0;bottom:0;z-index:30;
+    height:calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+    padding-bottom:env(safe-area-inset-bottom);
+    background:#fff;border-top:1px solid var(--border);
+    display:none;max-width:560px;margin:0 auto;
+    box-shadow:0 -1px 6px rgba(0,0,0,.04);
+  }
+  .tabbar button{
+    flex:1;background:none;border:none;cursor:pointer;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+    color:var(--muted);font-family:inherit;font-size:11px;font-weight:700;padding:0;
+    transition:color .15s;
+  }
+  .tabbar button .ti{font-size:22px;line-height:1;}
+  .tabbar button.active{color:var(--primary);}
+  body.manager .tabbar{display:flex;}
+  body.manager main{padding-bottom:calc(var(--tabbar-h) + 24px);}
+
+  /* ====== トースト ====== */
+  .toast{
+    position:fixed;left:50%;bottom:calc(var(--tabbar-h) + 20px);
+    transform:translateX(-50%) translateY(20px);
+    background:#0f172a;color:#fff;font-size:14px;font-weight:700;
+    padding:12px 20px;border-radius:999px;box-shadow:0 4px 16px rgba(0,0,0,.25);
+    opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:50;
+    max-width:90%;text-align:center;
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  .toast.danger{background:var(--danger);}
+
+  /* 日付の自動表示（入力不要・今日が入る） */
+  .date-display{padding:10px 12px;background:#f0fdfa;border:1.5px solid #ccfbf1;border-radius:10px;font-size:16px;font-weight:800;color:var(--primary-dark);white-space:nowrap;}
+  /* 完了（お礼）画面 */
+  .thanks{text-align:center;padding:56px 16px 24px;}
+  .thanks-ico{font-size:64px;margin-bottom:6px;}
+  .thanks h2{font-size:24px;margin:6px 0 4px;color:var(--primary-dark);}
+  .thanks p{font-size:16px;color:var(--muted);margin:0 0 14px;}
+  .thanks .thanks-done{display:inline-block;background:#f0fdfa;border:1px solid #ccfbf1;color:var(--primary-dark);font-weight:800;font-size:14px;padding:8px 16px;border-radius:999px;margin:6px 0 0;}
+  .thanks .btn{max-width:300px;margin:0 auto;}
+  /* 管理者メニューへの控えめなリンク */
+  .manager-link{text-align:center;margin-top:16px;}
+  .manager-link a{font-size:12px;color:var(--muted);text-decoration:underline;}
+  /* 管理者パスワードのモーダル */
+  .modal-overlay{display:none;position:fixed;inset:0;z-index:60;background:rgba(15,23,42,.45);align-items:center;justify-content:center;padding:24px;}
+  .modal-overlay.show{display:flex;}
+  .modal{background:#fff;border-radius:16px;padding:24px 20px;width:100%;max-width:340px;box-shadow:0 10px 40px rgba(0,0,0,.25);text-align:center;}
+  .modal-ico{font-size:40px;margin-bottom:4px;}
+  .modal h3{margin:0 0 4px;font-size:18px;color:var(--text);}
+  .modal p{margin:0 0 16px;font-size:13px;color:var(--muted);}
+  .modal input{text-align:center;letter-spacing:.2em;font-size:18px;}
+  .modal-err{color:var(--danger);font-size:13px;font-weight:700;min-height:18px;margin-top:8px;}
+  .modal-btns{display:flex;gap:10px;margin-top:14px;}
+  .modal-btns .btn{flex:1;width:auto;}
+
+  /* 外注費 明細表（印刷用） */
+  #printArea{display:none;color:#000;}
+  #printArea .pr-title{font-size:20px;font-weight:800;text-align:center;margin:0 0 2px;}
+  #printArea .pr-meta{text-align:center;font-size:12px;color:#555;margin-bottom:14px;}
+  #printArea .pr-month{font-size:15px;font-weight:800;border-bottom:2px solid #000;margin:18px 0 8px;padding-bottom:3px;}
+  #printArea .pr-staff{font-size:13px;font-weight:800;margin:12px 0 4px;}
+  #printArea .pr-sheet{page-break-after:always;margin-bottom:28px;}
+  #printArea .pr-sheet:last-child{page-break-after:auto;margin-bottom:0;}
+  #printArea table.pr-tbl{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:6px;}
+  #printArea table.pr-tbl th,#printArea table.pr-tbl td{border:1px solid #888;padding:5px 7px;text-align:right;}
+  #printArea table.pr-tbl th{background:#eee;text-align:center;}
+  #printArea table.pr-tbl td.dt{text-align:left;}
+  #printArea table.pr-tbl tr.sub td{font-weight:800;background:#f3f3f3;}
+  #printArea .pr-grand{margin-top:14px;padding:9px;border:2px solid #000;font-size:13px;font-weight:800;text-align:center;}
+  /* 記録一覧PDF（A4 1枚・月ごと） */
+  #printArea .lst-sheet{page-break-after:always;margin-bottom:28px;}
+  #printArea .lst-sheet:last-child{page-break-after:auto;margin-bottom:0;}
+  #printArea table.lst-tbl{width:100%;border-collapse:collapse;table-layout:fixed;font-size:9px;}
+  #printArea table.lst-tbl th,#printArea table.lst-tbl td{border:1px solid #999;padding:2px 3px;text-align:right;overflow:hidden;}
+  #printArea table.lst-tbl th{background:#eee;text-align:center;font-size:8.5px;}
+  #printArea table.lst-tbl td.l{text-align:left;}
+  #printArea table.lst-tbl td.memo{text-align:left;white-space:normal;word-break:break-all;}
+  #printArea table.lst-tbl tr.tot td{font-weight:800;background:#f3f3f3;}
+  @media print{
+    @page{margin:14mm;}
+    html,body{background:#fff !important;}
+    .wrap, #pwModal, #toast{display:none !important;}
+    #printArea{display:block !important;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="app-header">
+    <span class="logo">🧺</span>
+    <h1>ランドリー報告</h1>
+  </header>
+
+  <main>
+
+    <!-- ========== 報告フォーム ========== -->
+    <section id="view-form" class="view active">
+      <div class="section-title"><h2>📝 報告を入力</h2></div>
+
+      <div class="edit-banner" id="editBanner">
+        <span>✏️ 編集中です</span>
+        <button type="button" id="cancelEdit">キャンセル</button>
+      </div>
+
+      <form id="recForm" class="card" autocomplete="off">
+        <div class="row2">
+          <div class="field col-date">
+            <label class="lbl" for="f-date">日付<span class="opt">今日（変更可）</span></label>
+            <input type="date" id="f-date" required>
+          </div>
+          <div class="field col-staff">
+            <label class="lbl" for="f-staff">担当者<span class="req">必須</span></label>
+            <input type="text" id="f-staff" list="staffList" placeholder="選択 / 入力" required>
+            <datalist id="staffList"></datalist>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="lbl">洗濯機の大きさ<span class="req">必須</span> <span class="opt">使った回数を入力（複数OK）</span></label>
+          <div id="sizeFields"></div>
+          <div class="auto-cost"><span>🌀 洗濯機代（自動計算）</span><b id="washerCostVal">¥0</b></div>
+        </div>
+
+        <div class="field">
+          <label class="lbl" for="f-fee">乾燥機の代金<span class="req">必須</span></label>
+          <div class="with-unit yen">
+            <input type="number" id="f-fee" inputmode="numeric" min="0" step="1" placeholder="0">
+            <span class="unit">円</span>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="lbl">タオルの枚数<span class="req">必須</span></label>
+          <div id="towelFields"></div>
+        </div>
+
+        <div class="field">
+          <label class="lbl" for="f-memo">メモ<span class="opt">任意</span></label>
+          <textarea id="f-memo" placeholder="特記事項があれば（例：シーツも一緒に など）"></textarea>
+        </div>
+
+        <button type="submit" class="btn btn-primary" id="submitBtn">この内容で報告する</button>
+      </form>
+      <div class="manager-link"><a href="#" id="managerLink">🔧 管理者メニュー（記録一覧・集計）</a></div>
+    </section>
+
+    <!-- ========== 記録一覧 ========== -->
+    <section id="view-list" class="view">
+      <div class="section-title">
+        <h2>📋 記録一覧</h2>
+        <span class="count" id="listCount"></span>
+      </div>
+      <div style="margin-bottom:14px;display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-csv btn-sm" id="csvBtn">⬇️ CSV書き出し</button>
+        <button class="btn btn-csv btn-sm" id="listPdfBtn">🖨️ 一覧をPDF（月ごと・A4）</button>
+      </div>
+      <div id="listArea"></div>
+    </section>
+
+    <!-- ========== 月別集計 ========== -->
+    <section id="view-summary" class="view">
+      <div class="section-title">
+        <h2>📊 集計</h2>
+        <span class="count" id="sumCount"></span>
+      </div>
+      <div class="seg" id="sumSeg">
+        <button type="button" class="seg-btn active" data-mode="all">📊 全体</button>
+        <button type="button" class="seg-btn" data-mode="staff">👤 担当者別</button>
+      </div>
+      <div style="margin-bottom:14px;">
+        <button class="btn btn-csv btn-sm" id="printBtn">🖨️ 外注費の明細を印刷（担当者別・月末締め）</button>
+      </div>
+      <div id="summaryArea"></div>
+    </section>
+
+    <!-- ========== 完了（お礼） ========== -->
+    <section id="view-thanks" class="view">
+      <div class="thanks">
+        <div class="thanks-ico">🙇</div>
+        <h2>お疲れさまでした</h2>
+        <p>ありがとうございます</p>
+        <p class="thanks-done">本日の報告は完了しました ✅</p>
+      </div>
+    </section>
+
+  </main>
+
+  <nav class="tabbar">
+    <button data-view="form" class="active"><span class="ti">📝</span>報告</button>
+    <button data-view="list"><span class="ti">📋</span>一覧</button>
+    <button data-view="summary"><span class="ti">📊</span>集計</button>
+  </nav>
+
+</div>
+
+<div class="modal-overlay" id="pwModal">
+  <div class="modal">
+    <div class="modal-ico">🔧</div>
+    <h3>管理者メニュー</h3>
+    <p>パスワードを入力してください</p>
+    <input type="password" id="pwInput" placeholder="パスワード" autocomplete="off">
+    <div class="modal-err" id="pwErr"></div>
+    <div class="modal-btns">
+      <button type="button" class="btn btn-ghost" id="pwCancel">キャンセル</button>
+      <button type="button" class="btn btn-primary" id="pwOk">開く</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- 印刷用：外注費 明細表（画面では非表示、印刷時のみ表示） -->
+<div id="printArea"></div>
+
+<script>
+/* =========================================================
+   ▼ ここを変えると現場に合わせられます（設定）
+   ========================================================= */
+// 担当者の候補（入力欄で選べます。自由入力もOK）
+const STAFF = ["前川", "新山"];   // ← 実際のメンバー名に書き換えてください
+// 洗濯機の大きさの区分
+const WASHER_SIZES = ["大", "中", "小"];   // ← 実際の区分に書き換えてください
+// 洗濯機の1回あたりの料金（「回数 × この単価」で洗濯機代を自動計算）
+const WASHER_PRICES = { "大": 1200, "中": 900, "小": 600 };   // ← 料金を変えられます
+// タオルの種類（種類ごとに枚数を記録します。種類を増減できます）
+const TOWEL_TYPES = ["ジャンボタオル", "バスタオル", "フェイスタオル"];
+// 外注費：タオルの「1日の合計枚数」で決まる（max枚まで → 料金）。表より多い日は10枚ごとに+¥250で延長
+const OUTSOURCE_TIERS = [
+  {max:30, fee:2000}, {max:40, fee:2250}, {max:50, fee:2500}, {max:60, fee:2750},
+  {max:70, fee:3000}, {max:80, fee:3250}, {max:90, fee:3500}, {max:100, fee:3750}
+];
+const PREP_FEE = 1000;   // 準備（日当）：1日あたりの金額
+// 管理者メニューを開くパスワード（担当者が開けないようにする簡易ロック）
+const ADMIN_PASSWORD = "1048";   // ← 管理者パスワード
+// 印刷する明細表のタイトル
+const STATEMENT_TITLE = "SAUNA152外注費明細";
+/* =========================================================
+   ▲ 設定ここまで
+   ========================================================= */
+
+const STORE_KEY = "laundryRecords_v1";
+const WEEK = ["日","月","火","水","木","金","土"];
+
+/* ---------- データ保存・読込（端末内：localStorage） ---------- */
+function loadRecords(){
+  try{ return JSON.parse(localStorage.getItem(STORE_KEY)) || []; }
+  catch(e){ return []; }
+}
+function saveRecords(arr){
+  localStorage.setItem(STORE_KEY, JSON.stringify(arr));
+}
+
+/* ---------- 小さなヘルパー ---------- */
+function uid(){
+  if(window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return "id-" + Date.now() + "-" + Math.floor(Math.random()*1e6);
+}
+function todayStr(){
+  const d = new Date();
+  const m = String(d.getMonth()+1).padStart(2,"0");
+  const day = String(d.getDate()).padStart(2,"0");
+  return d.getFullYear() + "-" + m + "-" + day;
+}
+function formatDateJp(iso){            // "2026-06-05" -> "6月5日(金)"
+  const [y,m,d] = iso.split("-").map(Number);
+  const wd = new Date(y, m-1, d).getDay();
+  return m + "月" + d + "日(" + WEEK[wd] + ")";
+}
+function formatMonthJp(ym){            // "2026-06" -> "2026年6月"
+  const [y,m] = ym.split("-").map(Number);
+  return y + "年" + m + "月";
+}
+function yen(n){ return Number(n||0).toLocaleString("ja-JP"); }
+function esc(s){
+  return String(s==null?"":s).replace(/[&<>"']/g, c => (
+    {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]
+  ));
+}
+/* タオル（種類別）の入力読み取り・書き込み・合計 */
+function readTowels(){
+  const t = {};
+  document.querySelectorAll(".towel-input").forEach(inp => {
+    t[inp.dataset.towel] = Math.max(0, Math.round(Number(inp.value)) || 0);
+  });
+  return t;
+}
+function setTowels(towels){
+  document.querySelectorAll(".towel-input").forEach(inp => {
+    const v = towels && towels[inp.dataset.towel];
+    inp.value = (v || v === 0) ? v : "";
+  });
+}
+function towelTotal(r){
+  if(r.towels) return Object.keys(r.towels).reduce((s,k)=> s + Number(r.towels[k]||0), 0);
+  return Number(r.towel||0);
+}
+/* 洗濯機サイズ（回数）の入力読み取り・書き込み・表示 */
+function readSizes(){
+  const s = {};
+  document.querySelectorAll(".size-input").forEach(inp => {
+    s[inp.dataset.size] = Math.max(0, Math.round(Number(inp.value)) || 0);
+  });
+  return s;
+}
+function setSizes(sizes){
+  document.querySelectorAll(".size-input").forEach(inp => {
+    const v = sizes && sizes[inp.dataset.size];
+    inp.value = (v || v === 0) ? v : "";
+  });
+}
+function recSizes(r){            // 旧データ(単一size)も {サイズ:1} に変換
+  return r.sizes || (r.size ? {[r.size]:1} : {});
+}
+function sizeBadges(r){
+  const s = recSizes(r);
+  return WASHER_SIZES.filter(k => Number(s[k]||0) > 0).map(k => {
+    const n = Number(s[k]);
+    return `<span class="badge">洗濯機 ${esc(k)}${n>1?"×"+n:""}</span>`;
+  }).join("");
+}
+/* 洗濯機代（回数 × 単価）。recは記録から、liveは入力中の値から計算 */
+function washerCost(r){
+  const s = recSizes(r);
+  return WASHER_SIZES.reduce((sum,k)=> sum + Number(s[k]||0) * Number(WASHER_PRICES[k]||0), 0);
+}
+function liveWasherCost(){
+  const s = readSizes();
+  return WASHER_SIZES.reduce((sum,k)=> sum + Number(s[k]||0) * Number(WASHER_PRICES[k]||0), 0);
+}
+function updateWasherCost(){
+  const el = document.getElementById("washerCostVal");
+  if(el) el.textContent = "¥" + yen(liveWasherCost());
+}
+/* 担当者の候補：設定の名前＋これまでに入力された名前を記憶して選べるようにする */
+function staffSuggestions(){
+  const seen = [];
+  const add = n => { n = (n||"").trim(); if(n && seen.indexOf(n) === -1) seen.push(n); };
+  STAFF.forEach(add);
+  loadRecords().forEach(r => add(r.staff));
+  return seen;
+}
+function refreshStaffList(){
+  document.getElementById("staffList").innerHTML =
+    staffSuggestions().map(s => `<option value="${esc(s)}">`).join("");
+}
+
+/* ---------- トースト通知 ---------- */
+let toastTimer = null;
+function toast(msg, danger){
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.toggle("danger", !!danger);
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=> t.classList.remove("show"), 2200);
+}
+
+/* ---------- 画面切り替え ---------- */
+function showView(name){
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+  document.getElementById("view-" + name).classList.add("active");
+  document.querySelectorAll(".tabbar button").forEach(b =>
+    b.classList.toggle("active", b.dataset.view === name)
+  );
+  if(name === "list") renderList();
+  if(name === "summary") renderSummary();
+  window.scrollTo(0,0);
+}
+document.querySelectorAll(".tabbar button").forEach(b =>
+  b.addEventListener("click", () => showView(b.dataset.view))
+);
+
+/* ---------- フォームの初期化 ---------- */
+function initSelectsAndDatalist(){
+  refreshStaffList();
+  const sf = document.getElementById("sizeFields");
+  sf.innerHTML = WASHER_SIZES.map(s => `
+    <div class="size-row">
+      <span class="size-name">洗濯機 ${esc(s)} <small class="size-price">¥${yen(WASHER_PRICES[s]||0)}</small></span>
+      <div class="with-unit">
+        <input type="number" class="size-input" data-size="${esc(s)}" inputmode="numeric" min="0" step="1" placeholder="0">
+        <span class="unit">回</span>
+      </div>
+    </div>`).join("");
+  sf.addEventListener("input", updateWasherCost);
+  const tf = document.getElementById("towelFields");
+  tf.innerHTML = TOWEL_TYPES.map(t => `
+    <div class="towel-row">
+      <span class="towel-name">${esc(t)}</span>
+      <div class="with-unit">
+        <input type="number" class="towel-input" data-towel="${esc(t)}" inputmode="numeric" min="0" step="1" placeholder="0">
+        <span class="unit">枚</span>
+      </div>
+    </div>`).join("");
+}
+function showDate(){
+  const el = document.getElementById("dateDisplay");
+  if(!el) return;   // 日付表示欄が無い（編集可モード）ときは何もしない
+  const v = document.getElementById("f-date").value;
+  el.textContent = v ? formatDateJp(v) : "";
+}
+function resetForm(){
+  document.getElementById("recForm").reset();
+  document.getElementById("f-date").value = todayStr();
+  showDate();
+  editingId = null;
+  document.getElementById("editBanner").classList.remove("show");
+  document.getElementById("submitBtn").textContent = "この内容で報告する";
+  updateWasherCost();
+}
+
+/* ---------- 送信（新規 / 更新） ---------- */
+let editingId = null;
+
+document.getElementById("recForm").addEventListener("submit", function(e){
+  e.preventDefault();
+  const date  = document.getElementById("f-date").value;
+  const staff = document.getElementById("f-staff").value.trim();
+  const sizes = readSizes();
+  const feeRaw   = document.getElementById("f-fee").value;
+  const towels = readTowels();
+  const memo  = document.getElementById("f-memo").value.trim();
+
+  if(!date){ toast("日付を入力してください", true); return; }
+  if(!staff){ toast("担当者を入力してください", true); return; }
+  if(WASHER_SIZES.reduce((s,k)=> s + (sizes[k]||0), 0) === 0){ toast("洗濯機の大きさ（使った回数）を入力してください", true); return; }
+  if(feeRaw === ""){ toast("乾燥機の代金を入力してください", true); return; }
+  if(TOWEL_TYPES.reduce((s,t)=> s + (towels[t]||0), 0) === 0){ toast("タオルの枚数を入力してください", true); return; }
+
+  const fee = Math.max(0, Math.round(Number(feeRaw)) || 0);
+
+  const records = loadRecords();
+  if(editingId){
+    const i = records.findIndex(r => r.id === editingId);
+    if(i >= 0){
+      records[i] = Object.assign({}, records[i], {date,staff,sizes,fee,towels,memo});
+      delete records[i].towel; delete records[i].size;
+    }
+    saveRecords(records);
+    resetForm();
+    toast("✅ 更新しました");
+    showView("list");
+  }else{
+    records.push({id:uid(), date, staff, sizes, fee, towels, memo, createdAt:new Date().toISOString()});
+    saveRecords(records);
+    resetForm();
+    showView("thanks");
+  }
+  refreshStaffList();
+});
+
+document.getElementById("cancelEdit").addEventListener("click", () => {
+  resetForm();
+  showView("form");
+  toast("編集をキャンセルしました");
+});
+
+// 管理者メニュー：パスワードを確認してから開く（リロードで再びロックされます）
+const pwModal = document.getElementById("pwModal");
+function openPwModal(){
+  document.getElementById("pwInput").value = "";
+  document.getElementById("pwErr").textContent = "";
+  pwModal.classList.add("show");
+  setTimeout(() => document.getElementById("pwInput").focus(), 50);
+}
+function closePwModal(){ pwModal.classList.remove("show"); }
+function normalizePw(s){   // 全角英数字→半角、前後の空白を除去（入力ミスに強くする）
+  return String(s||"").trim().replace(/[０-９Ａ-Ｚａ-ｚ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+}
+function tryUnlock(){
+  if(normalizePw(document.getElementById("pwInput").value) === normalizePw(ADMIN_PASSWORD)){
+    closePwModal();
+    document.body.classList.add("manager");
+    showView("list");
+  }else{
+    document.getElementById("pwErr").textContent = "パスワードが違います";
+    document.getElementById("pwInput").value = "";
+    document.getElementById("pwInput").focus();
+  }
+}
+document.getElementById("managerLink").addEventListener("click", e => { e.preventDefault(); openPwModal(); });
+document.getElementById("pwOk").addEventListener("click", tryUnlock);
+document.getElementById("pwCancel").addEventListener("click", closePwModal);
+document.getElementById("pwInput").addEventListener("keydown", e => { if(e.key === "Enter"){ e.preventDefault(); tryUnlock(); } });
+pwModal.addEventListener("click", e => { if(e.target === pwModal) closePwModal(); });
+
+/* ---------- 編集・削除 ---------- */
+function startEdit(id){
+  const r = loadRecords().find(x => x.id === id);
+  if(!r) return;
+  document.getElementById("f-date").value = r.date;
+  showDate();
+  document.getElementById("f-staff").value = r.staff;
+  setSizes(recSizes(r));
+  updateWasherCost();
+  document.getElementById("f-fee").value = r.fee;
+  setTowels(r.towels || {});
+  document.getElementById("f-memo").value = r.memo || "";
+  editingId = id;
+  document.getElementById("editBanner").classList.add("show");
+  document.getElementById("submitBtn").textContent = "更新する";
+  showView("form");
+}
+function delRecord(id){
+  const r = loadRecords().find(x => x.id === id);
+  const label = r ? `${formatDateJp(r.date)}・${r.staff}さん の記録` : "この記録";
+  if(!confirm(label + "を削除します。よろしいですか？")) return;
+  saveRecords(loadRecords().filter(x => x.id !== id));
+  if(editingId === id) resetForm();
+  renderList();
+  toast("🗑️ 削除しました");
+}
+
+/* ---------- 一覧の描画 ---------- */
+function sortByDateDesc(a,b){
+  if(a.date !== b.date) return a.date < b.date ? 1 : -1;
+  return (a.createdAt||"") < (b.createdAt||"") ? 1 : -1;
+}
+function renderList(){
+  const records = loadRecords().slice().sort(sortByDateDesc);
+  const area = document.getElementById("listArea");
+  document.getElementById("listCount").textContent = records.length ? `全 ${records.length} 件` : "";
+
+  if(!records.length){
+    area.innerHTML = `<div class="empty"><div class="ico">🧺</div>
+      <p>まだ記録がありません</p>
+      <p>「📝 報告」から最初の1件を入力してみましょう。</p></div>`;
+    return;
+  }
+  area.innerHTML = records.map(r => `
+    <div class="rec">
+      <div class="rec-top">
+        <span class="rec-date">${esc(formatDateJp(r.date))}</span>
+        <span class="rec-staff">👤 ${esc(r.staff)}</span>
+      </div>
+      <div class="size-badges">${sizeBadges(r)}</div>
+      <div class="rec-grid" style="margin-bottom:8px;">
+        <div class="rec-item"><span class="k">🌀 洗濯機代（自動）</span><span class="v">¥${yen(washerCost(r))}</span></div>
+        <div class="rec-item"><span class="k">💰 乾燥機の代金</span><span class="v">¥${yen(r.fee)}</span></div>
+      </div>
+      <div class="rec-item" style="margin-bottom:10px;background:#f0fdfa;border:1px solid #ccfbf1;"><span class="k">💴 合計金額</span><span class="v" style="color:var(--primary-dark);">¥${yen(washerCost(r)+Number(r.fee||0))}</span></div>
+      <div class="rec-towels">
+        <div class="rt-head"><span>🧺 タオルの枚数</span><span class="rt-total">合計 ${yen(towelTotal(r))}枚</span></div>
+        <div class="rt-list">
+          ${TOWEL_TYPES.map(t => `<span class="rt-chip">${esc(t)}<b>${yen((r.towels&&r.towels[t])||0)}</b>枚</span>`).join("")}
+        </div>
+      </div>
+      ${r.memo ? `<div class="rec-memo">📝 ${esc(r.memo)}</div>` : ""}
+      <div class="rec-actions">
+        <button class="btn btn-sm btn-edit" data-edit="${r.id}">✏️ 編集</button>
+        <button class="btn btn-sm btn-del" data-del="${r.id}">🗑️ 削除</button>
+      </div>
+    </div>
+  `).join("");
+
+  area.querySelectorAll("[data-edit]").forEach(b => b.addEventListener("click", () => startEdit(b.dataset.edit)));
+  area.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => delRecord(b.dataset.del)));
+}
+
+/* ---------- 集計の描画（全体 / 担当者別） ---------- */
+let summaryMode = "all";   // "all"=全体, "staff"=担当者別
+function groupByMonth(records){
+  const g = {};
+  records.forEach(r => { const ym=(r.date||"").slice(0,7); (g[ym]=g[ym]||[]).push(r); });
+  return g;
+}
+function staffOrder(names){
+  const out = [];
+  STAFF.forEach(s => { if(names.indexOf(s) >= 0) out.push(s); });
+  names.slice().sort().forEach(s => { if(out.indexOf(s) < 0) out.push(s); });
+  return out;
+}
+// 外注費：1日の合計枚数 → 料金表。表より多い日は10枚ごとに+¥250で延長
+function outsourceFee(n){
+  n = Number(n)||0;
+  for(const t of OUTSOURCE_TIERS){ if(n <= t.max) return t.fee; }
+  const last = OUTSOURCE_TIERS[OUTSOURCE_TIERS.length-1];
+  return last.fee + Math.ceil((n - last.max)/10) * 250;
+}
+// (担当者,日付)ごとに集約：タオル合計枚数→外注費＋準備
+function staffDayGroups(list){
+  const m = {};
+  list.forEach(r => { const k = r.staff + "|" + r.date; (m[k] = m[k] || {staff:r.staff, date:r.date, recs:[]}).recs.push(r); });
+  return Object.values(m).map(g => {
+    g.towels = g.recs.reduce((s,r)=> s + towelTotal(r), 0);
+    g.fee = outsourceFee(g.towels);
+    g.prep = PREP_FEE;
+    g.total = g.fee + g.prep;
+    return g;
+  });
+}
+
+function renderSummary(){
+  const records = loadRecords();
+  const area = document.getElementById("summaryArea");
+  document.getElementById("sumCount").textContent = records.length ? `全 ${records.length} 件` : "";
+  if(!records.length){
+    area.innerHTML = `<div class="empty"><div class="ico">📊</div>
+      <p>集計するデータがありません</p>
+      <p>報告を入力すると、ここに集計が表示されます。</p></div>`;
+    return;
+  }
+  area.innerHTML = (summaryMode === "staff") ? renderSummaryStaff(records) : renderSummaryAll(records);
+}
+
+// 📊 全体の集計：すべての数字
+function renderSummaryAll(records){
+  const groups = groupByMonth(records);
+  return Object.keys(groups).sort().reverse().map(ym => {
+    const list = groups[ym];
+    const sd = staffDayGroups(list);
+    const feeTotal = sd.reduce((s,g)=> s + g.fee, 0);
+    const prepTotal = sd.reduce((s,g)=> s + g.prep, 0);
+    const pay = feeTotal + prepTotal;
+    const washer = list.reduce((s,r)=> s + washerCost(r), 0);
+    const dryer = list.reduce((s,r)=> s + Number(r.fee||0), 0);
+    const towel = list.reduce((s,r)=> s + towelTotal(r), 0);
+    const towelChips = TOWEL_TYPES.map(t => {
+      const n = list.reduce((s,r)=> s + Number((r.towels&&r.towels[t])||0), 0);
+      return `<span class="tb-chip">${esc(t)} ${yen(n)}枚</span>`;
+    }).join("");
+    const sizeCount = {};
+    list.forEach(r => { const s = recSizes(r); WASHER_SIZES.forEach(k => sizeCount[k] = (sizeCount[k]||0) + Number(s[k]||0)); });
+    const sizeChips = WASHER_SIZES.filter(k => sizeCount[k] > 0).map(k =>
+      `<span class="size-chip">洗濯機 ${esc(k)}：${sizeCount[k]}回</span>`).join("");
+    return `
+      <div class="month-card">
+        <div class="month-head">
+          <h3 class="month-title">📅 ${esc(formatMonthJp(ym))}</h3>
+          <span class="month-total">支払い ¥${yen(pay)}</span>
+        </div>
+        <div class="stat-row">
+          <div class="stat"><div class="num"><small>¥</small>${yen(feeTotal)}</div><div class="lab">外注費 合計</div></div>
+          <div class="stat"><div class="num"><small>¥</small>${yen(prepTotal)}</div><div class="lab">準備 合計</div></div>
+          <div class="stat total"><div class="num"><small>¥</small>${yen(pay)}</div><div class="lab">外注費＋準備</div></div>
+        </div>
+        <div class="stat-row">
+          <div class="stat"><div class="num"><small>¥</small>${yen(washer)}</div><div class="lab">洗濯機代 合計</div></div>
+          <div class="stat"><div class="num"><small>¥</small>${yen(dryer)}</div><div class="lab">乾燥機代 合計</div></div>
+          <div class="stat"><div class="num">${yen(towel)}<small>枚</small></div><div class="lab">タオル総数</div></div>
+        </div>
+        <div class="month-sub">報告 ${list.length}件 ・ 稼働 ${sd.length}日</div>
+        <div class="towel-break">${towelChips}</div>
+        <div class="size-break">${sizeChips}</div>
+      </div>`;
+  }).join("");
+}
+
+// 👤 担当者別の集計：タオル枚数 → 外注費＋準備（日別・合計）
+function renderSummaryStaff(records){
+  const groups = groupByMonth(records);
+  return Object.keys(groups).sort().reverse().map(ym => {
+    const list = groups[ym];
+    const byStaff = {};
+    list.forEach(r => { (byStaff[r.staff] = byStaff[r.staff] || []).push(r); });
+    let monthTotal = 0;
+    const staffBlocks = staffOrder(Object.keys(byStaff)).map(name => {
+      const sd = staffDayGroups(byStaff[name]).sort((a,b)=> a.date < b.date ? 1 : -1);
+      const sTotal = sd.reduce((s,g)=> s + g.total, 0);
+      monthTotal += sTotal;
+      const dayRows = sd.map(g => {
+        const per = g.towels > 0 ? (g.fee / g.towels).toFixed(1) : "—";
+        return `
+        <div class="day-row">
+          <span class="day-date">${esc(formatDateJp(g.date))}</span>
+          <span class="day-amt">¥${yen(g.total)}</span>
+          <span class="day-sub">タオル ${yen(g.towels)}枚 → 外注費 ¥${yen(g.fee)} ＋ 準備 ¥${yen(g.prep)}</span>
+          <span class="day-per">タオル1枚あたりの外注費 ¥${per}</span>
+        </div>`;
+      }).join("");
+      const sFee = sd.reduce((s,g)=> s + g.fee, 0);
+      const sTowels = sd.reduce((s,g)=> s + g.towels, 0);
+      const avgPer = sTowels > 0 ? (sFee / sTowels).toFixed(1) : "—";
+      return `
+        <div class="staff-block">
+          <div class="staff-head">
+            <span class="staff-name">👤 ${esc(name)}</span>
+            <span class="staff-total">合計 ¥${yen(sTotal)} ・ ${sd.length}日</span>
+          </div>
+          ${dayRows}
+          <div class="staff-avg">📊 月の平均：タオル1枚あたり <b>¥${avgPer}</b> <span>（外注費 ¥${yen(sFee)} ÷ ${yen(sTowels)}枚）</span></div>
+        </div>`;
+    }).join("");
+    return `
+      <div class="month-card">
+        <div class="month-head">
+          <h3 class="month-title">📅 ${esc(formatMonthJp(ym))}</h3>
+          <span class="month-total">合計 ¥${yen(monthTotal)}</span>
+        </div>
+        ${staffBlocks}
+      </div>`;
+  }).join("");
+}
+
+// 集計の切替（全体／担当者別）
+document.querySelectorAll("#sumSeg .seg-btn").forEach(b => b.addEventListener("click", () => {
+  summaryMode = b.dataset.mode;
+  document.querySelectorAll("#sumSeg .seg-btn").forEach(x => x.classList.toggle("active", x === b));
+  renderSummary();
+}));
+
+// 外注費 明細表（印刷用）を組み立てる：月ごと → 担当者ごとに日別明細＋小計、月合計
+function buildPrintStatement(){
+  const records = loadRecords();
+  if(!records.length) return `<div class="pr-sheet"><div class="pr-title">${esc(STATEMENT_TITLE)}</div><p>データがありません。</p></div>`;
+  const groups = groupByMonth(records);
+  const issueDate = formatDateJp(todayStr());
+  const sheets = [];
+  Object.keys(groups).sort().reverse().forEach(ym => {
+    const list = groups[ym];
+    const byStaff = {};
+    list.forEach(r => { (byStaff[r.staff] = byStaff[r.staff] || []).push(r); });
+    staffOrder(Object.keys(byStaff)).forEach(name => {
+      const sd = staffDayGroups(byStaff[name]).sort((a,b)=> a.date < b.date ? -1 : 1);
+      let sFee=0, sPrep=0, sTowel=0, sTot=0;
+      const rows = sd.map(g => {
+        sFee += g.fee; sPrep += g.prep; sTowel += g.towels; sTot += g.total;
+        return `<tr><td class="dt">${esc(formatDateJp(g.date))}</td><td>${yen(g.towels)}枚</td><td>¥${yen(g.fee)}</td><td>¥${yen(g.prep)}</td><td>¥${yen(g.total)}</td></tr>`;
+      }).join("");
+      const avg = sTowel > 0 ? (sFee / sTowel).toFixed(1) : "—";
+      sheets.push(`<div class="pr-sheet">
+        <div class="pr-title">${esc(STATEMENT_TITLE)}</div>
+        <div class="pr-meta">発行日：${esc(issueDate)}</div>
+        <div class="pr-month">${esc(formatMonthJp(ym))} ／ 担当：${esc(name)}</div>
+        <table class="pr-tbl">
+          <thead><tr><th>日付</th><th>タオル</th><th>外注費</th><th>準備</th><th>合計</th></tr></thead>
+          <tbody>${rows}<tr class="sub"><td class="dt">合計</td><td>${yen(sTowel)}枚</td><td>¥${yen(sFee)}</td><td>¥${yen(sPrep)}</td><td>¥${yen(sTot)}</td></tr></tbody>
+        </table>
+        <div class="pr-grand">${esc(name)}　${esc(formatMonthJp(ym))} 合計： 外注費 ¥${yen(sFee)} ＋ 準備 ¥${yen(sPrep)} ＝ ¥${yen(sTot)}<br><span style="font-weight:600;font-size:12px;">タオル ${yen(sTowel)}枚 ／ 1枚あたりの外注費 平均 ¥${avg}</span></div>
+      </div>`);
+    });
+  });
+  return sheets.join("");
+}
+document.getElementById("printBtn").addEventListener("click", () => {
+  if(!loadRecords().length){ toast("印刷するデータがありません", true); return; }
+  document.getElementById("printArea").innerHTML = buildPrintStatement();
+  window.print();
+});
+
+// 記録一覧（月ごと・A4 1枚）をPDF/印刷用に組み立てる
+function buildListPdf(){
+  const records = loadRecords();
+  if(!records.length) return `<div class="lst-sheet"><div class="pr-title">記録一覧</div><p>データがありません。</p></div>`;
+  const groups = groupByMonth(records);
+  const issueDate = formatDateJp(todayStr());
+  const cols = `<colgroup><col style="width:8%"><col style="width:6%"><col style="width:3%"><col style="width:3%"><col style="width:3%"><col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:6%"><col style="width:6%"><col style="width:6%"><col style="width:5%"><col style="width:7%"><col style="width:23%"></colgroup>`;
+  const head = `<thead><tr><th>日付</th><th>担当</th><th>大</th><th>中</th><th>小</th><th>洗濯機代</th><th>乾燥機代</th><th>合計</th><th>ジャンボ</th><th>バス</th><th>フェイス</th><th>計</th><th>平均（枚）</th><th>メモ</th></tr></thead>`;
+  const sheets = [];
+  Object.keys(groups).sort().reverse().forEach(ym => {
+    const list = groups[ym].slice().sort((a,b)=> a.date < b.date ? -1 : 1);
+    let tWash=0,tDry=0,tTot=0,tJ=0,tB=0,tF=0,tTw=0,tFee=0;
+    const rows = list.map(r => {
+      const sz = recSizes(r), wc = washerCost(r), dry = Number(r.fee||0), tot = wc+dry, tw = towelTotal(r);
+      const j=(r.towels&&r.towels["ジャンボタオル"])||0, b=(r.towels&&r.towels["バスタオル"])||0, f=(r.towels&&r.towels["フェイスタオル"])||0;
+      const fee = outsourceFee(tw);
+      const per = tw>0 ? "¥"+(fee/tw).toFixed(1) : "—";
+      tWash+=wc; tDry+=dry; tTot+=tot; tJ+=j; tB+=b; tF+=f; tTw+=tw; tFee+=fee;
+      const p = r.date.split("-").map(Number);
+      const dt = p[1]+"/"+p[2]+"("+WEEK[new Date(p[0],p[1]-1,p[2]).getDay()]+")";
+      return `<tr><td class="l">${esc(dt)}</td><td class="l">${esc(r.staff)}</td><td>${sz["大"]||0}</td><td>${sz["中"]||0}</td><td>${sz["小"]||0}</td><td>¥${yen(wc)}</td><td>¥${yen(dry)}</td><td>¥${yen(tot)}</td><td>${yen(j)}</td><td>${yen(b)}</td><td>${yen(f)}</td><td>${yen(tw)}</td><td>${esc(per)}</td><td class="memo">${esc(r.memo||"")}</td></tr>`;
+    }).join("");
+    const totPer = tTw>0 ? "¥"+(tFee/tTw).toFixed(1) : "—";
+    const tot = `<tr class="tot"><td class="l" colspan="5">合計（${list.length}件）</td><td>¥${yen(tWash)}</td><td>¥${yen(tDry)}</td><td>¥${yen(tTot)}</td><td>${yen(tJ)}</td><td>${yen(tB)}</td><td>${yen(tF)}</td><td>${yen(tTw)}</td><td>${esc(totPer)}</td><td></td></tr>`;
+    sheets.push(`<div class="lst-sheet">
+      <div class="pr-title">記録一覧（${esc(formatMonthJp(ym))}）</div>
+      <div class="pr-meta">発行日：${esc(issueDate)}　／　${list.length}件</div>
+      <table class="lst-tbl">${cols}${head}<tbody>${rows}${tot}</tbody></table>
+    </div>`);
+  });
+  return sheets.join("");
+}
+document.getElementById("listPdfBtn").addEventListener("click", () => {
+  if(!loadRecords().length){ toast("PDFにするデータがありません", true); return; }
+  document.getElementById("printArea").innerHTML = buildListPdf();
+  window.print();
+});
+
+/* ---------- CSV書き出し ---------- */
+document.getElementById("csvBtn").addEventListener("click", () => {
+  const records = loadRecords().slice().sort(sortByDateDesc);
+  if(!records.length){ toast("書き出すデータがありません", true); return; }
+
+  const header = ["日付","担当者", ...WASHER_SIZES, "洗濯機代", "乾燥機代", "合計金額", ...TOWEL_TYPES.map(t => t.replace(/タオル$/,"")), "タオル合計", "メモ","登録日時"];
+  const rows = records.map(r => {
+    const sz = recSizes(r);
+    const wc = washerCost(r);
+    return [
+      r.date, r.staff,
+      ...WASHER_SIZES.map(s => Number(sz[s]||0)),
+      wc, r.fee, wc + Number(r.fee||0),
+      ...TOWEL_TYPES.map(t => (r.towels&&r.towels[t]) || 0),
+      towelTotal(r), (r.memo||""), (r.createdAt||"")
+    ];
+  });
+  const csv = [header, ...rows].map(cols =>
+    cols.map(c => `"${String(c).replace(/"/g,'""')}"`).join(",")
+  ).join("\r\n");
+
+  // ExcelでもJapaneseが文字化けしないようBOMを付与
+  const blob = new Blob(["﻿" + csv], {type:"text/csv;charset=utf-8;"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "ランドリー記録_" + todayStr() + ".csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast("⬇️ CSVを書き出しました");
+});
+
+/* ---------- 起動 ---------- */
+initSelectsAndDatalist();
+resetForm();
+</script>
+</body>
+</html>
