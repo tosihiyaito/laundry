@@ -270,9 +270,9 @@
   .thanks p{font-size:16px;color:var(--muted);margin:0 0 14px;}
   .thanks .thanks-done{display:inline-block;background:#f0fdfa;border:1px solid #ccfbf1;color:var(--primary-dark);font-weight:800;font-size:14px;padding:8px 16px;border-radius:999px;margin:6px 0 0;}
   .thanks .btn{max-width:300px;margin:0 auto;}
-  /* 管理者メニューへの控えめなリンク */
-  .manager-link{text-align:center;margin-top:16px;}
-  .manager-link a{font-size:12px;color:var(--muted);text-decoration:underline;}
+  /* 管理者メニューのボタン（報告タイトルの右） */
+  .admin-btn{flex-shrink:0;font-family:inherit;font-size:13px;font-weight:700;color:var(--primary-dark);background:#f0fdfa;border:1.5px solid #ccfbf1;border-radius:10px;padding:8px 12px;cursor:pointer;white-space:nowrap;}
+  .admin-btn:active{background:#ccfbf1;}
   /* 管理者パスワードのモーダル */
   .modal-overlay{display:none;position:fixed;inset:0;z-index:60;background:rgba(15,23,42,.45);align-items:center;justify-content:center;padding:24px;}
   .modal-overlay.show{display:flex;}
@@ -328,7 +328,10 @@
 
     <!-- ========== 報告フォーム ========== -->
     <section id="view-form" class="view active">
-      <div class="section-title"><h2>📝 報告を入力</h2></div>
+      <div class="section-title">
+        <h2>📝 報告を入力</h2>
+        <button type="button" id="managerLink" class="admin-btn">🔧 管理者メニュー</button>
+      </div>
 
       <div class="edit-banner" id="editBanner">
         <span>✏️ 編集中です</span>
@@ -379,7 +382,6 @@
 
         <button type="submit" class="btn btn-primary" id="submitBtn">この内容で報告する</button>
       </form>
-      <div class="manager-link"><a href="#" id="managerLink">🔧 管理者メニュー（記録一覧・集計）</a></div>
     </section>
 
     <!-- ========== 記録一覧 ========== -->
