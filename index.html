@@ -175,6 +175,24 @@
   .btn-edit{background:#fff;color:var(--primary);border:1.5px solid var(--primary);}
   .btn-del{background:#fff;color:var(--danger);border:1.5px solid #fecaca;}
 
+  /* ====== 記録一覧（テーブル） ====== */
+  .list-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);background:var(--card);}
+  table.rec-tbl{width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap;}
+  table.rec-tbl th,table.rec-tbl td{padding:7px 9px;border-bottom:1px solid var(--border);text-align:right;}
+  table.rec-tbl thead th{background:#f1f5f9;color:#334155;font-size:11px;font-weight:800;text-align:center;border-bottom:2px solid var(--border);}
+  table.rec-tbl th.l,table.rec-tbl td.l{text-align:left;}
+  table.rec-tbl tbody tr:nth-child(even){background:#fafbfc;}
+  table.rec-tbl td.amt{font-weight:700;color:#0f172a;}
+  table.rec-tbl td.sum{font-weight:800;color:var(--primary-dark);}
+  table.rec-tbl td.memo{text-align:left;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#475569;font-size:12px;}
+  table.rec-tbl td.zero{color:#cbd5e1;}
+  table.rec-tbl tr.foot td{font-weight:800;background:#eef2f6;border-top:2px solid var(--border);border-bottom:none;color:#0f172a;}
+  table.rec-tbl tr.foot td.sum{color:var(--primary-dark);}
+  table.rec-tbl td.act{white-space:nowrap;text-align:center;}
+  .btn-mini{padding:4px 8px;font-size:13px;line-height:1;border-radius:8px;cursor:pointer;background:#fff;border:1.5px solid var(--border);}
+  .btn-mini.e{color:var(--primary);border-color:var(--primary);margin-right:4px;}
+  .btn-mini.d{color:var(--danger);border-color:#fecaca;}
+
   /* ====== 集計 ====== */
   .month-card{background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:16px;margin-bottom:14px;}
   .month-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;}
@@ -325,8 +343,7 @@
           </div>
           <div class="field col-staff">
             <label class="lbl" for="f-staff">担当者<span class="req">必須</span></label>
-            <input type="text" id="f-staff" list="staffList" placeholder="選択 / 入力" required>
-            <datalist id="staffList"></datalist>
+            <select id="f-staff" required></select>
           </div>
         </div>
 
@@ -371,12 +388,14 @@
         <h2>📋 記録一覧</h2>
         <span class="count" id="listCount"></span>
       </div>
-      <div style="margin-bottom:14px;display:flex;gap:8px;flex-wrap:wrap;">
+      <div style="margin-bottom:6px;display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-csv btn-sm" id="refreshBtn">🔄 最新に更新</button>
         <button class="btn btn-csv btn-sm" id="csvBtn">⬇️ CSV書き出し</button>
         <button class="btn btn-csv btn-sm" id="listPdfBtn">🖨️ 一覧をPDF（月ごと・A4）</button>
         <button class="btn btn-csv btn-sm" id="importBtn">📥 データ取り込み</button>
         <input type="file" id="importFile" accept=".json,application/json" style="display:none">
       </div>
+      <div id="syncStatus" style="margin-bottom:12px;font-size:12px;color:var(--muted);">☁️ クラウドと同期</div>
       <div id="listArea"></div>
     </section>
 
@@ -440,7 +459,7 @@
    ▼ ここを変えると現場に合わせられます（設定）
    ========================================================= */
 // 担当者の候補（入力欄で選べます。自由入力もOK）
-const STAFF = ["前川", "新山", "伊藤"];   // ← 実際のメンバー名に書き換えてください
+const STAFF = ["伊藤清美", "前川", "新山", "長谷川"];   // ← 担当者（セレクトの選択肢）
 // 確認者の候補（入力欄で選べます。自由入力もOK）
 const CONFIRMERS = ["渡瀬", "長谷川", "高杉", "鵜飼", "伊藤"];   // ← 確認した人の候補
 // 洗濯機の大きさの区分
@@ -459,6 +478,8 @@ const PREP_FEE = 1000;   // 準備（日当）：1日あたりの金額
 const ADMIN_PASSWORD = "1048";   // ← 管理者パスワード
 // 印刷する明細表のタイトル
 const STATEMENT_TITLE = "SAUNA152外注費明細";
+// データ共有先（Googleスプレッドシート）。空 "" にするとこの端末だけ（共有なし）になります
+const SYNC_URL = "https://script.google.com/macros/s/AKfycbxXRY6qlduk8ciA4-TjVWir6CS2wpGmyc-0nUHQm03AiVF-t5r5rC1IzGUD0V8tQN-u/exec";
 /* =========================================================
    ▲ 設定ここまで
    ========================================================= */
@@ -468,11 +489,52 @@ const WEEK = ["日","月","火","水","木","金","土"];
 
 /* ---------- データ保存・読込（端末内：localStorage） ---------- */
 function loadRecords(){
-  try{ return JSON.parse(localStorage.getItem(STORE_KEY)) || []; }
+  try{
+    const arr = JSON.parse(localStorage.getItem(STORE_KEY)) || [];
+    // クラウド経由で日付がDate文字列化していても表示・集計が壊れないよう読み取り時に正規化
+    arr.forEach(r => { if(r && r.date) r.date = normIsoDate(r.date); });
+    return arr;
+  }
   catch(e){ return []; }
 }
 function saveRecords(arr){
   localStorage.setItem(STORE_KEY, JSON.stringify(arr));
+  cloudPush();
+}
+/* ---------- クラウド同期（Googleスプレッドシート） ---------- */
+function setSyncStatus(txt){ const el = document.getElementById("syncStatus"); if(el) el.textContent = txt; }
+function cloudPush(){
+  if(!SYNC_URL) return;
+  setSyncStatus("☁️ 保存中…");
+  fetch(SYNC_URL, {method:"POST", mode:"no-cors", headers:{"Content-Type":"text/plain;charset=utf-8"}, body: JSON.stringify({records: loadRecords()})})
+    .then(()=> setSyncStatus("☁️ 同期済み"))
+    .catch(()=> setSyncStatus("⚠️ オフライン（保存待ち）"));
+}
+function cloudPull(done){
+  if(!SYNC_URL){ if(done) done(false); return; }
+  setSyncStatus("☁️ 読み込み中…");
+  const cbName = "__lsync" + Date.now() + Math.floor(Math.random()*1000);
+  const s = document.createElement("script");
+  let finished = false;
+  const finish = ok => { if(finished) return; finished = true; try{ s.remove(); }catch(e){} try{ delete window[cbName]; }catch(e){} if(done) done(ok); };
+  window[cbName] = function(data){
+    try{
+      if(data && data.ok && Array.isArray(data.records)){
+        const local = loadRecords();
+        const byId = {}, cloudIds = {};
+        local.forEach(r => { if(r && r.id) byId[r.id] = r; });
+        data.records.forEach(r => { if(r && r.id){ if(r.date) r.date = normIsoDate(r.date); byId[r.id] = r; cloudIds[r.id] = 1; } });
+        localStorage.setItem(STORE_KEY, JSON.stringify(Object.keys(byId).map(k => byId[k])));
+        setSyncStatus("☁️ 同期済み");
+        if(local.some(r => r && r.id && !cloudIds[r.id])) cloudPush(); // 端末だけにあった分をクラウドへ
+        finish(true);
+      } else { setSyncStatus("⚠️ 同期エラー"); finish(false); }
+    }catch(e){ setSyncStatus("⚠️ 同期エラー"); finish(false); }
+  };
+  s.onerror = function(){ setSyncStatus("⚠️ オフライン"); finish(false); };
+  s.src = SYNC_URL + "?callback=" + cbName + "&t=" + Date.now();
+  document.body.appendChild(s);
+  setTimeout(()=> finish(false), 12000);
 }
 
 /* ---------- 小さなヘルパー ---------- */
@@ -486,8 +548,21 @@ function todayStr(){
   const day = String(d.getDate()).padStart(2,"0");
   return d.getFullYear() + "-" + m + "-" + day;
 }
+// どんな日付表現でも "YYYY-MM-DD" に正規化（Sheets由来の "Thu Jun 25 2026..." 対策）
+function normIsoDate(v){
+  if(!v) return "";
+  v = String(v);
+  const m = v.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m) return m[1] + "-" + m[2] + "-" + m[3];
+  const d = new Date(v);
+  if(!isNaN(d.getTime())){
+    const p = n => String(n).padStart(2,"0");
+    return d.getFullYear() + "-" + p(d.getMonth()+1) + "-" + p(d.getDate());
+  }
+  return v;
+}
 function formatDateJp(iso){            // "2026-06-05" -> "6月5日(金)"
-  const [y,m,d] = iso.split("-").map(Number);
+  const [y,m,d] = normIsoDate(iso).split("-").map(Number);
   const wd = new Date(y, m-1, d).getDay();
   return m + "月" + d + "日(" + WEEK[wd] + ")";
 }
@@ -557,16 +632,12 @@ function updateWasherCost(){
   if(el) el.textContent = "¥" + yen(liveWasherCost());
 }
 /* 担当者の候補：設定の名前＋これまでに入力された名前を記憶して選べるようにする */
-function staffSuggestions(){
-  const seen = [];
-  const add = n => { n = (n||"").trim(); if(n && seen.indexOf(n) === -1) seen.push(n); };
-  STAFF.forEach(add);
-  loadRecords().forEach(r => add(r.staff));
-  return seen;
-}
 function refreshStaffList(){
-  document.getElementById("staffList").innerHTML =
-    staffSuggestions().map(s => `<option value="${esc(s)}">`).join("");
+  const sel = document.getElementById("f-staff");
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">選択してください</option>' +
+    STAFF.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join("");
+  if(cur) sel.value = cur;
 }
 function refreshConfirmerList(){
   const seen = [];
@@ -595,8 +666,8 @@ function showView(name){
   document.querySelectorAll(".tabbar button").forEach(b =>
     b.classList.toggle("active", b.dataset.view === name)
   );
-  if(name === "list") renderList();
-  if(name === "summary") renderSummary();
+  if(name === "list"){ renderList(); cloudPull(ok => { if(ok) renderList(); }); }
+  if(name === "summary"){ renderSummary(); cloudPull(ok => { if(ok) renderSummary(); }); }
   window.scrollTo(0,0);
 }
 document.querySelectorAll(".tabbar button").forEach(b =>
@@ -764,35 +835,50 @@ function renderList(){
       <p>「📝 報告」から最初の1件を入力してみましょう。</p></div>`;
     return;
   }
-  area.innerHTML = records.map(r => `
-    <div class="rec">
-      <div class="rec-top">
-        <span class="rec-date">${esc(formatDateJp(r.date))}</span>
-        <span class="rec-staff">👤 ${esc(r.staff)}${r.confirmer ? ` ・ ✅ ${esc(r.confirmer)}` : ""}</span>
-      </div>
-      <div class="size-badges">${sizeBadges(r)}</div>
-      <div class="rec-grid" style="margin-bottom:8px;">
-        <div class="rec-item"><span class="k">🌀 洗濯機代（自動）</span><span class="v">¥${yen(washerCost(r))}</span></div>
-        <div class="rec-item"><span class="k">💰 乾燥機の代金</span><span class="v">¥${yen(r.fee)}</span></div>
-      </div>
-      <div class="rec-item" style="margin-bottom:10px;background:#f0fdfa;border:1px solid #ccfbf1;"><span class="k">💴 合計金額</span><span class="v" style="color:var(--primary-dark);">¥${yen(washerCost(r)+Number(r.fee||0))}</span></div>
-      <div class="rec-towels">
-        <div class="rt-head"><span>🧺 タオルの枚数</span><span class="rt-total">合計 ${yen(towelTotal(r))}枚</span></div>
-        <div class="rt-list">
-          ${TOWEL_TYPES.map(t => `<span class="rt-chip">${esc(t)}<b>${yen((r.towels&&r.towels[t])||0)}</b>枚</span>`).join("")}
-        </div>
-      </div>
-      ${r.memo ? `<div class="rec-memo">📝 ${esc(r.memo)}</div>` : ""}
-      <div class="rec-actions">
-        <button class="btn btn-sm btn-edit" data-edit="${r.id}">✏️ 編集</button>
-        <button class="btn btn-sm btn-del" data-del="${r.id}">🗑️ 削除</button>
-      </div>
-    </div>
-  `).join("");
+  const head = `<tr>
+    <th class="l">日付</th><th class="l">担当</th><th class="l">確認</th>
+    ${WASHER_SIZES.map(s => `<th>${esc(s)}</th>`).join("")}
+    <th>洗濯機代</th><th>乾燥機代</th><th>合計</th>
+    ${TOWEL_TYPES.map(t => `<th>${esc(towelShort(t))}</th>`).join("")}
+    <th>計</th><th class="l">メモ</th><th>操作</th>
+  </tr>`;
+
+  let tWash=0, tDry=0, tTot=0, tTw=0; const tT={};
+  const rows = records.map(r => {
+    const sz = recSizes(r), wc = washerCost(r), dry = Number(r.fee||0), tot = wc+dry, tw = towelTotal(r);
+    tWash+=wc; tDry+=dry; tTot+=tot; tTw+=tw;
+    return `<tr>
+      <td class="l">${esc(formatDateJp(r.date))}</td>
+      <td class="l">${esc(r.staff||"")}</td>
+      <td class="l">${esc(r.confirmer||"")}</td>
+      ${WASHER_SIZES.map(s => { const n=Number(sz[s]||0); return `<td class="${n?"":"zero"}">${n||"–"}</td>`; }).join("")}
+      <td class="amt">¥${yen(wc)}</td><td class="amt">¥${yen(dry)}</td><td class="sum">¥${yen(tot)}</td>
+      ${TOWEL_TYPES.map(t => { const v=(r.towels&&r.towels[t])||0; tT[t]=(tT[t]||0)+v; return `<td class="${v?"":"zero"}">${v||"–"}</td>`; }).join("")}
+      <td class="amt">${yen(tw)}</td>
+      <td class="memo" title="${esc(r.memo||"")}">${r.memo ? esc(r.memo) : ""}</td>
+      <td class="act">
+        <button class="btn-mini e" data-edit="${r.id}" title="編集">✏️</button>
+        <button class="btn-mini d" data-del="${r.id}" title="削除">🗑️</button>
+      </td>
+    </tr>`;
+  }).join("");
+
+  const foot = `<tr class="foot">
+    <td class="l" colspan="${3 + WASHER_SIZES.length}">合計（${records.length}件）</td>
+    <td>¥${yen(tWash)}</td><td>¥${yen(tDry)}</td><td class="sum">¥${yen(tTot)}</td>
+    ${TOWEL_TYPES.map(t => `<td>${yen(tT[t]||0)}</td>`).join("")}
+    <td>${yen(tTw)}</td><td></td><td></td>
+  </tr>`;
+
+  area.innerHTML = `<div class="list-wrap"><table class="rec-tbl">
+    <thead>${head}</thead>
+    <tbody>${rows}${foot}</tbody>
+  </table></div>`;
 
   area.querySelectorAll("[data-edit]").forEach(b => b.addEventListener("click", () => startEdit(b.dataset.edit)));
   area.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => delRecord(b.dataset.del)));
 }
+function towelShort(t){ return String(t||"").replace(/タオル$/, ""); }
 
 /* ---------- 集計の描画（全体 / 担当者別） ---------- */
 let summaryMode = "all";   // "all"=全体, "staff"=担当者別
@@ -1014,6 +1100,7 @@ document.getElementById("listPdfBtn").addEventListener("click", () => {
 });
 
 // データ取り込み（JSONファイル）：同じidは重複させず追加
+document.getElementById("refreshBtn").addEventListener("click", () => cloudPull(ok => { renderList(); toast(ok ? "🔄 最新に更新しました" : "更新できませんでした（オフライン？）", !ok); }));
 document.getElementById("importBtn").addEventListener("click", () => document.getElementById("importFile").click());
 document.getElementById("importFile").addEventListener("change", function(e){
   const file = e.target.files[0];
@@ -1075,6 +1162,11 @@ document.getElementById("csvBtn").addEventListener("click", () => {
 /* ---------- 起動 ---------- */
 initSelectsAndDatalist();
 resetForm();
+cloudPull(ok => {
+  const v = (document.querySelector(".view.active")||{}).id;
+  if(ok && v === "view-list") renderList();
+  if(ok && v === "view-summary") renderSummary();
+});
 </script>
 </body>
 </html>
