@@ -503,7 +503,8 @@ const OUTSOURCE_TIERS = [
   {max:30, fee:2000}, {max:40, fee:2250}, {max:50, fee:2500}, {max:60, fee:2750},
   {max:70, fee:3000}, {max:80, fee:3250}, {max:90, fee:3500}, {max:100, fee:3750}
 ];
-const PREP_FEE = 1000;   // 準備（日当）：1日あたりの金額
+const PREP_FEE = 1000;      // 準備：1日あたりの金額
+const CLEANUP_FEE = 1000;   // 片付け：1日あたりの金額
 // 管理者メニューを開くパスワード（担当者が開けないようにする簡易ロック）
 const ADMIN_PASSWORD = "1048";   // ← 管理者パスワード
 // 印刷する明細表のタイトル
@@ -761,9 +762,12 @@ document.getElementById("recForm").addEventListener("submit", function(e){
 
   if(!date){ toast("日付を入力してください", true); return; }
   if(!staff){ toast("担当者を入力してください", true); return; }
-  if(WASHER_SIZES.reduce((s,k)=> s + (sizes[k]||0), 0) === 0){ toast("洗濯機の大きさ（使った回数）を入力してください", true); return; }
-  if(feeRaw === ""){ toast("乾燥機の代金を入力してください", true); return; }
-  if(TOWEL_TYPES.reduce((s,t)=> s + (towels[t]||0), 0) === 0){ toast("タオルの枚数を入力してください", true); return; }
+  // 準備/片付けにチェックがあれば、洗濯なし（準備・片付けだけ）でも報告OK
+  if(!(prep || cleanup)){
+    if(WASHER_SIZES.reduce((s,k)=> s + (sizes[k]||0), 0) === 0){ toast("洗濯機の大きさ（使った回数）を入力してください", true); return; }
+    if(feeRaw === ""){ toast("乾燥機の代金を入力してください", true); return; }
+    if(TOWEL_TYPES.reduce((s,t)=> s + (towels[t]||0), 0) === 0){ toast("タオルの枚数を入力してください", true); return; }
+  }
 
   const fee = Math.max(0, Math.round(Number(feeRaw)) || 0);
 
@@ -957,6 +961,7 @@ function staffOrder(names){
 // 外注費：1日の合計枚数 → 料金表。表より多い日は10枚ごとに+¥250で延長
 function outsourceFee(n){
   n = Number(n)||0;
+  if(n <= 0) return 0;   // 洗濯なし（タオル0枚）の日は外注費なし
   for(const t of OUTSOURCE_TIERS){ if(n <= t.max) return t.fee; }
   const last = OUTSOURCE_TIERS[OUTSOURCE_TIERS.length-1];
   return last.fee + Math.ceil((n - last.max)/10) * 250;
@@ -970,8 +975,10 @@ function staffDayGroups(list){
   return Object.values(m).map(g => {
     g.towels = g.recs.reduce((s,r)=> s + towelTotal(r), 0);
     g.fee = outsourceFee(g.towels);
-    g.prep = g.recs.some(prepDone) ? PREP_FEE : 0;   // 準備にチェックした日だけ計上（取り込み既存は準備済み扱い）
-    g.total = g.fee + g.prep;
+    g.prep = g.recs.some(prepDone) ? PREP_FEE : 0;   // 準備（取り込み既存は準備済み扱い）
+    g.cleanup = g.recs.some(r => r && r.cleanup === true) ? CLEANUP_FEE : 0;   // 片付け
+    g.allow = g.prep + g.cleanup;   // 準備・片付け 合計
+    g.total = g.fee + g.allow;
     return g;
   });
 }
@@ -996,8 +1003,8 @@ function renderSummaryAll(records){
     const list = groups[ym];
     const sd = staffDayGroups(list);
     const feeTotal = sd.reduce((s,g)=> s + g.fee, 0);
-    const prepTotal = sd.reduce((s,g)=> s + g.prep, 0);
-    const pay = feeTotal + prepTotal;
+    const allowTotal = sd.reduce((s,g)=> s + g.allow, 0);
+    const pay = feeTotal + allowTotal;
     const washer = list.reduce((s,r)=> s + washerCost(r), 0);
     const dryer = list.reduce((s,r)=> s + Number(r.fee||0), 0);
     const towel = list.reduce((s,r)=> s + towelTotal(r), 0);
@@ -1017,8 +1024,8 @@ function renderSummaryAll(records){
         </div>
         <div class="stat-row">
           <div class="stat"><div class="num"><small>¥</small>${yen(feeTotal)}</div><div class="lab">外注費 合計</div></div>
-          <div class="stat"><div class="num"><small>¥</small>${yen(prepTotal)}</div><div class="lab">準備 合計</div></div>
-          <div class="stat total"><div class="num"><small>¥</small>${yen(pay)}</div><div class="lab">外注費＋準備</div></div>
+          <div class="stat"><div class="num"><small>¥</small>${yen(allowTotal)}</div><div class="lab">準備・片付け 合計</div></div>
+          <div class="stat total"><div class="num"><small>¥</small>${yen(pay)}</div><div class="lab">外注費＋準備片付け</div></div>
         </div>
         <div class="stat-row">
           <div class="stat"><div class="num"><small>¥</small>${yen(washer)}</div><div class="lab">洗濯機代 合計</div></div>
@@ -1050,7 +1057,7 @@ function renderSummaryStaff(records){
         <div class="day-row">
           <span class="day-date">${esc(formatDateJp(g.date))}</span>
           <span class="day-amt">¥${yen(g.total)}</span>
-          <span class="day-sub">タオル ${yen(g.towels)}枚 → 外注費 ¥${yen(g.fee)} ＋ 準備 ¥${yen(g.prep)}</span>
+          <span class="day-sub">タオル ${yen(g.towels)}枚 → 外注費 ¥${yen(g.fee)} ＋ 準備・片付け ¥${yen(g.allow)}</span>
           <span class="day-per">タオル1枚あたりの外注費 ¥${per}</span>
         </div>`;
       }).join("");
@@ -1103,10 +1110,10 @@ function buildPrintStatement(){
     list.forEach(r => { (byStaff[r.staff] = byStaff[r.staff] || []).push(r); });
     staffOrder(Object.keys(byStaff)).forEach(name => {
       const sd = staffDayGroups(byStaff[name]).sort((a,b)=> a.date < b.date ? -1 : 1);
-      let sFee=0, sPrep=0, sTowel=0, sTot=0;
+      let sFee=0, sAllow=0, sTowel=0, sTot=0;
       const rows = sd.map(g => {
-        sFee += g.fee; sPrep += g.prep; sTowel += g.towels; sTot += g.total;
-        return `<tr><td class="dt">${esc(formatDateJp(g.date))}</td><td>${yen(g.towels)}枚</td><td>¥${yen(g.fee)}</td><td>¥${yen(g.prep)}</td><td>¥${yen(g.total)}</td></tr>`;
+        sFee += g.fee; sAllow += g.allow; sTowel += g.towels; sTot += g.total;
+        return `<tr><td class="dt">${esc(formatDateJp(g.date))}</td><td>${yen(g.towels)}枚</td><td>¥${yen(g.fee)}</td><td>¥${yen(g.allow)}</td><td>¥${yen(g.total)}</td></tr>`;
       }).join("");
       const avg = sTowel > 0 ? (sFee / sTowel).toFixed(1) : "—";
       sheets.push(`<div class="pr-sheet">
@@ -1114,10 +1121,10 @@ function buildPrintStatement(){
         <div class="pr-meta">発行日：${esc(issueDate)}</div>
         <div class="pr-month">${esc(formatMonthJp(ym))} ／ 担当：${esc(name)}</div>
         <table class="pr-tbl">
-          <thead><tr><th>日付</th><th>タオル</th><th>外注費</th><th>準備</th><th>合計</th></tr></thead>
-          <tbody>${rows}<tr class="sub"><td class="dt">合計</td><td>${yen(sTowel)}枚</td><td>¥${yen(sFee)}</td><td>¥${yen(sPrep)}</td><td>¥${yen(sTot)}</td></tr></tbody>
+          <thead><tr><th>日付</th><th>タオル</th><th>外注費</th><th>準備・片付け</th><th>合計</th></tr></thead>
+          <tbody>${rows}<tr class="sub"><td class="dt">合計</td><td>${yen(sTowel)}枚</td><td>¥${yen(sFee)}</td><td>¥${yen(sAllow)}</td><td>¥${yen(sTot)}</td></tr></tbody>
         </table>
-        <div class="pr-grand">${esc(name)}　${esc(formatMonthJp(ym))} 合計： 外注費 ¥${yen(sFee)} ＋ 準備 ¥${yen(sPrep)} ＝ ¥${yen(sTot)}<br><span style="font-weight:600;font-size:12px;">タオル ${yen(sTowel)}枚 ／ 1枚あたりの外注費 平均 ¥${avg}</span></div>
+        <div class="pr-grand">${esc(name)}　${esc(formatMonthJp(ym))} 合計： 外注費 ¥${yen(sFee)} ＋ 準備・片付け ¥${yen(sAllow)} ＝ ¥${yen(sTot)}<br><span style="font-weight:600;font-size:12px;">タオル ${yen(sTowel)}枚 ／ 1枚あたりの外注費 平均 ¥${avg}</span></div>
       </div>`);
     });
   });
