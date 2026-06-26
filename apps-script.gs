@@ -1,6 +1,7 @@
 /** ランドリーアプリ用 データ保存スクリプト（Googleスプレッドシートに貼り付け） **/
 const SHEET_NAME = 'records';
-const HEADERS = ['日付','担当者','確認者','大','中','小','乾燥機代','ジャンボ','バス','フェイス','メモ','id','登録日時'];
+// 準備・片付けは末尾に追加（既存列の位置を変えない＝既存データはそのまま読める）
+const HEADERS = ['日付','担当者','確認者','大','中','小','乾燥機代','ジャンボ','バス','フェイス','メモ','id','登録日時','準備','片付け'];
 
 function getSheet_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -26,13 +27,15 @@ function recToRow_(r) {
   return [r.date||'', r.staff||'', r.confirmer||'',
     Number(s['大'])||0, Number(s['中'])||0, Number(s['小'])||0, Number(r.fee)||0,
     Number(t['ジャンボタオル'])||0, Number(t['バスタオル'])||0, Number(t['フェイスタオル'])||0,
-    r.memo||'', r.id||'', r.createdAt||''];
+    r.memo||'', r.id||'', r.createdAt||'', r.prep?'TRUE':'', r.cleanup?'TRUE':''];
 }
 function rowToRec_(row) {
   return { date:ymd_(row[0]), staff:String(row[1]||''), confirmer:String(row[2]||''),
     sizes:{'大':Number(row[3])||0,'中':Number(row[4])||0,'小':Number(row[5])||0}, fee:Number(row[6])||0,
     towels:{'ジャンボタオル':Number(row[7])||0,'バスタオル':Number(row[8])||0,'フェイスタオル':Number(row[9])||0},
-    memo:String(row[10]||''), id:String(row[11]||''), createdAt:String(row[12]||'') };
+    memo:String(row[10]||''), id:String(row[11]||''), createdAt:String(row[12]||''),
+    prep: row[13]===true || String(row[13]).toUpperCase()==='TRUE',
+    cleanup: row[14]===true || String(row[14]).toUpperCase()==='TRUE' };
 }
 function doGet(e) {
   const sh = getSheet_(); const last = sh.getLastRow();
@@ -51,7 +54,7 @@ function doPost(e) {
     if (records.length) {
       // 日付(1列目)と登録日時(13列目)はテキスト保存し、Sheetsの日付自動変換を防ぐ
       sh.getRange(2,1,records.length,1).setNumberFormat('@');
-      sh.getRange(2,HEADERS.length,records.length,1).setNumberFormat('@');
+      sh.getRange(2,13,records.length,1).setNumberFormat('@');
       sh.getRange(2,1,records.length,HEADERS.length).setValues(records.map(recToRow_));
     }
     return ContentService.createTextOutput(JSON.stringify({ ok:true, count:records.length })).setMimeType(ContentService.MimeType.JSON);

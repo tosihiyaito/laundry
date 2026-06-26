@@ -79,9 +79,17 @@
   .row2 .field{margin-bottom:0;}
   .row2 .col-date{flex:0 0 auto;}
   .row2 .col-staff{flex:1 1 auto;min-width:0;}
-  label.lbl{display:block;font-size:14px;font-weight:700;margin-bottom:4px;color:#334155;}
-  label.lbl .req{color:var(--danger);font-size:12px;margin-left:4px;}
-  label.lbl .opt{color:var(--muted);font-size:12px;font-weight:500;margin-left:4px;}
+  label.lbl,.lbl{display:block;font-size:14px;font-weight:700;margin-bottom:4px;color:#334155;}
+  .lbl .req{color:var(--danger);font-size:12px;margin-left:4px;}
+  .lbl .opt{color:var(--muted);font-size:12px;font-weight:500;margin-left:4px;}
+  /* 準備・片付け（チェック）＋確認者の行 */
+  .row-task{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start;margin-bottom:12px;}
+  .row-task .field{margin-bottom:0;}
+  .task-chks{flex:0 0 auto;}
+  .chk-row{display:flex;gap:8px;}
+  .chk{display:inline-flex;align-items:center;gap:5px;font-size:14px;font-weight:700;color:#334155;background:#f8fafc;border:1.5px solid var(--border);border-radius:10px;padding:8px 10px;cursor:pointer;user-select:none;white-space:nowrap;}
+  .chk input[type=checkbox]{width:18px;height:18px;min-height:0;margin:0;padding:0;flex:0 0 auto;accent-color:var(--primary);cursor:pointer;}
+  .col-confirmer{flex:1 1 115px;min-width:0;}
 
   input,select,textarea{
     width:100%;
@@ -186,6 +194,9 @@
   table.rec-tbl td.sum{font-weight:800;color:var(--primary-dark);}
   table.rec-tbl td.memo{text-align:left;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#475569;font-size:12px;}
   table.rec-tbl td.zero{color:#cbd5e1;}
+  table.rec-tbl td.chk-cell{text-align:center;white-space:nowrap;}
+  table.rec-tbl td.chk-cell .wk{display:inline-block;font-size:11px;font-weight:800;color:#cbd5e1;padding:0 2px;}
+  table.rec-tbl td.chk-cell .wk.on{color:var(--primary-dark);}
   table.rec-tbl tr.foot td{font-weight:800;background:#eef2f6;border-top:2px solid var(--border);border-bottom:none;color:#0f172a;}
   table.rec-tbl tr.foot td.sum{color:var(--primary-dark);}
   table.rec-tbl tr.grp td{background:#e6fbf6;color:var(--primary-dark);font-weight:800;text-align:left;border-top:2px solid var(--border);font-size:14px;}
@@ -354,10 +365,19 @@
           </div>
         </div>
 
-        <div class="field">
-          <label class="lbl" for="f-confirmer">確認者<span class="opt">任意</span></label>
-          <input type="text" id="f-confirmer" list="confirmerList" placeholder="確認した人を選択 / 入力">
-          <datalist id="confirmerList"></datalist>
+        <div class="row-task">
+          <div class="task-chks">
+            <span class="lbl">作業<span class="opt">任意</span></span>
+            <div class="chk-row">
+              <label class="chk"><input type="checkbox" id="f-prep"><span>準備</span></label>
+              <label class="chk"><input type="checkbox" id="f-cleanup"><span>片付け</span></label>
+            </div>
+          </div>
+          <div class="field col-confirmer">
+            <label class="lbl" for="f-confirmer">確認者<span class="opt">任意</span></label>
+            <input type="text" id="f-confirmer" list="confirmerList" placeholder="確認した人">
+            <datalist id="confirmerList"></datalist>
+          </div>
         </div>
 
         <div class="field">
@@ -732,6 +752,8 @@ document.getElementById("recForm").addEventListener("submit", function(e){
   const date  = document.getElementById("f-date").value;
   const staff = document.getElementById("f-staff").value.trim();
   const confirmer = document.getElementById("f-confirmer").value.trim();
+  const prep = document.getElementById("f-prep").checked;
+  const cleanup = document.getElementById("f-cleanup").checked;
   const sizes = readSizes();
   const feeRaw   = document.getElementById("f-fee").value;
   const towels = readTowels();
@@ -749,7 +771,7 @@ document.getElementById("recForm").addEventListener("submit", function(e){
   if(editingId){
     const i = records.findIndex(r => r.id === editingId);
     if(i >= 0){
-      records[i] = Object.assign({}, records[i], {date,staff,confirmer,sizes,fee,towels,memo});
+      records[i] = Object.assign({}, records[i], {date,staff,confirmer,prep,cleanup,sizes,fee,towels,memo});
       delete records[i].towel; delete records[i].size;
     }
     saveRecords(records);
@@ -757,7 +779,7 @@ document.getElementById("recForm").addEventListener("submit", function(e){
     toast("✅ 更新しました");
     showView("list");
   }else{
-    records.push({id:uid(), date, staff, confirmer, sizes, fee, towels, memo, createdAt:new Date().toISOString()});
+    records.push({id:uid(), date, staff, confirmer, prep, cleanup, sizes, fee, towels, memo, createdAt:new Date().toISOString()});
     saveRecords(records);
     resetForm();
     showView("thanks");
@@ -809,6 +831,8 @@ function startEdit(id){
   showDate();
   document.getElementById("f-staff").value = r.staff;
   document.getElementById("f-confirmer").value = r.confirmer || "";
+  document.getElementById("f-prep").checked = !!r.prep;
+  document.getElementById("f-cleanup").checked = !!r.cleanup;
   setSizes(recSizes(r));
   updateWasherCost();
   document.getElementById("f-fee").value = r.fee;
@@ -835,7 +859,11 @@ function sortByDateDesc(a,b){
   return (a.createdAt||"") < (b.createdAt||"") ? 1 : -1;
 }
 let listMode = "date";   // "date"=日付順, "staff"=担当者別
-function listColCount(){ return 3 + WASHER_SIZES.length + 3 + TOWEL_TYPES.length + 3; }
+function listColCount(){ return 3 + 1 + WASHER_SIZES.length + 3 + TOWEL_TYPES.length + 3; }
+// 準備・片付けの表示（やった方を強調）
+function workCell(r){
+  return `<td class="chk-cell"><span class="wk ${r.prep?"on":""}">準</span><span class="wk ${r.cleanup?"on":""}">片</span></td>`;
+}
 // 1記録ぶんの行
 function listRowHtml(r){
   const sz = recSizes(r), wc = washerCost(r), dry = Number(r.fee||0), tot = wc+dry, tw = towelTotal(r);
@@ -843,6 +871,7 @@ function listRowHtml(r){
     <td class="l">${esc(formatDateJp(r.date))}</td>
     <td class="l">${esc(r.staff||"")}</td>
     <td class="l">${esc(r.confirmer||"")}</td>
+    ${workCell(r)}
     ${WASHER_SIZES.map(s => { const n=Number(sz[s]||0); return `<td class="${n?"":"zero"}">${n||"–"}</td>`; }).join("")}
     <td class="amt">¥${yen(wc)}</td><td class="amt">¥${yen(dry)}</td><td class="sum">¥${yen(tot)}</td>
     ${TOWEL_TYPES.map(t => { const v=(r.towels&&r.towels[t])||0; return `<td class="${v?"":"zero"}">${v||"–"}</td>`; }).join("")}
@@ -860,7 +889,7 @@ function listTotalRow(label, list, cls){
   list.forEach(r => { const wc=washerCost(r), d=Number(r.fee||0); wash+=wc; dry+=d; tot+=wc+d; tw+=towelTotal(r);
     TOWEL_TYPES.forEach(t => { tt[t]=(tt[t]||0)+((r.towels&&r.towels[t])||0); }); });
   return `<tr class="${cls}">
-    <td class="l" colspan="${3 + WASHER_SIZES.length}">${esc(label)}</td>
+    <td class="l" colspan="${4 + WASHER_SIZES.length}">${esc(label)}</td>
     <td>¥${yen(wash)}</td><td>¥${yen(dry)}</td><td class="sum">¥${yen(tot)}</td>
     ${TOWEL_TYPES.map(t => `<td>${yen(tt[t]||0)}</td>`).join("")}
     <td>${yen(tw)}</td><td></td><td></td>
@@ -878,7 +907,7 @@ function renderList(){
     return;
   }
   const head = `<tr>
-    <th class="l">日付</th><th class="l">担当</th><th class="l">確認</th>
+    <th class="l">日付</th><th class="l">担当</th><th class="l">確認</th><th>作業</th>
     ${WASHER_SIZES.map(s => `<th>${esc(s)}</th>`).join("")}
     <th>洗濯機代</th><th>乾燥機代</th><th>合計</th>
     ${TOWEL_TYPES.map(t => `<th>${esc(towelShort(t))}</th>`).join("")}
@@ -1172,12 +1201,12 @@ document.getElementById("csvBtn").addEventListener("click", () => {
   const records = loadRecords().slice().sort(sortByDateDesc);
   if(!records.length){ toast("書き出すデータがありません", true); return; }
 
-  const header = ["日付","担当者","確認者", ...WASHER_SIZES, "洗濯機代", "乾燥機代", "合計金額", ...TOWEL_TYPES.map(t => t.replace(/タオル$/,"")), "タオル合計", "メモ","登録日時"];
+  const header = ["日付","担当者","確認者","準備","片付け", ...WASHER_SIZES, "洗濯機代", "乾燥機代", "合計金額", ...TOWEL_TYPES.map(t => t.replace(/タオル$/,"")), "タオル合計", "メモ","登録日時"];
   const rows = records.map(r => {
     const sz = recSizes(r);
     const wc = washerCost(r);
     return [
-      r.date, r.staff, (r.confirmer||""),
+      r.date, r.staff, (r.confirmer||""), (r.prep?"○":""), (r.cleanup?"○":""),
       ...WASHER_SIZES.map(s => Number(sz[s]||0)),
       wc, r.fee, wc + Number(r.fee||0),
       ...TOWEL_TYPES.map(t => (r.towels&&r.towels[t]) || 0),
