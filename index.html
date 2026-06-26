@@ -831,7 +831,7 @@ function startEdit(id){
   showDate();
   document.getElementById("f-staff").value = r.staff;
   document.getElementById("f-confirmer").value = r.confirmer || "";
-  document.getElementById("f-prep").checked = !!r.prep;
+  document.getElementById("f-prep").checked = prepDone(r);
   document.getElementById("f-cleanup").checked = !!r.cleanup;
   setSizes(recSizes(r));
   updateWasherCost();
@@ -862,7 +862,7 @@ let listMode = "date";   // "date"=日付順, "staff"=担当者別
 function listColCount(){ return 3 + 1 + WASHER_SIZES.length + 3 + TOWEL_TYPES.length + 3; }
 // 準備・片付けの表示（やった方を強調）
 function workCell(r){
-  return `<td class="chk-cell"><span class="wk ${r.prep?"on":""}">準</span><span class="wk ${r.cleanup?"on":""}">片</span></td>`;
+  return `<td class="chk-cell"><span class="wk ${prepDone(r)?"on":""}">準</span><span class="wk ${r.cleanup?"on":""}">片</span></td>`;
 }
 // 1記録ぶんの行
 function listRowHtml(r){
@@ -961,6 +961,8 @@ function outsourceFee(n){
   const last = OUTSOURCE_TIERS[OUTSOURCE_TIERS.length-1];
   return last.fee + Math.ceil((n - last.max)/10) * 250;
 }
+// 準備の有無：チェックON、または取り込み済み(imp-)の既存データは「準備済み」扱い（過去の¥1,000を維持）
+function prepDone(r){ return (r && r.prep === true) || /^imp-/.test((r && r.id) || ""); }
 // (担当者,日付)ごとに集約：タオル合計枚数→外注費＋準備
 function staffDayGroups(list){
   const m = {};
@@ -968,7 +970,7 @@ function staffDayGroups(list){
   return Object.values(m).map(g => {
     g.towels = g.recs.reduce((s,r)=> s + towelTotal(r), 0);
     g.fee = outsourceFee(g.towels);
-    g.prep = PREP_FEE;
+    g.prep = g.recs.some(prepDone) ? PREP_FEE : 0;   // 準備にチェックした日だけ計上（取り込み既存は準備済み扱い）
     g.total = g.fee + g.prep;
     return g;
   });
@@ -1206,7 +1208,7 @@ document.getElementById("csvBtn").addEventListener("click", () => {
     const sz = recSizes(r);
     const wc = washerCost(r);
     return [
-      r.date, r.staff, (r.confirmer||""), (r.prep?"○":""), (r.cleanup?"○":""),
+      r.date, r.staff, (r.confirmer||""), (prepDone(r)?"○":""), (r.cleanup?"○":""),
       ...WASHER_SIZES.map(s => Number(sz[s]||0)),
       wc, r.fee, wc + Number(r.fee||0),
       ...TOWEL_TYPES.map(t => (r.towels&&r.towels[t]) || 0),
