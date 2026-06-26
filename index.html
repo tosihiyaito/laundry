@@ -393,7 +393,7 @@
       <div style="margin-bottom:6px;display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-csv btn-sm" id="refreshBtn">🔄 最新に更新</button>
         <button class="btn btn-csv btn-sm" id="csvBtn">⬇️ CSV書き出し</button>
-        <button class="btn btn-csv btn-sm" id="listPdfBtn">🖨️ 一覧をPDF（月ごと・A4）</button>
+        <button class="btn btn-csv btn-sm" id="listPdfBtn">🖨️ 一覧をPDF（担当者別・A4）</button>
         <button class="btn btn-csv btn-sm" id="importBtn">📥 データ取り込み</button>
         <input type="file" id="importFile" accept=".json,application/json" style="display:none">
       </div>
@@ -1067,13 +1067,16 @@ document.getElementById("printBtn").addEventListener("click", () => {
 function buildListPdf(){
   const records = loadRecords();
   if(!records.length) return `<div class="lst-sheet"><div class="pr-title">記録一覧</div><p>データがありません。</p></div>`;
-  const groups = groupByMonth(records);
   const issueDate = formatDateJp(todayStr());
-  const cols = `<colgroup><col style="width:7%"><col style="width:6%"><col style="width:6%"><col style="width:3%"><col style="width:3%"><col style="width:3%"><col style="width:7%"><col style="width:7%"><col style="width:7%"><col style="width:5%"><col style="width:5%"><col style="width:5%"><col style="width:5%"><col style="width:7%"><col style="width:24%"></colgroup>`;
-  const head = `<thead><tr><th>日付</th><th>担当</th><th>確認</th><th>大</th><th>中</th><th>小</th><th>洗濯機代</th><th>乾燥機代</th><th>合計</th><th>ジャンボ</th><th>バス</th><th>フェイス</th><th>計</th><th>平均（枚）</th><th>メモ</th></tr></thead>`;
+  // 担当者ごとにまとめる（1人1ページ）
+  const byStaff = {};
+  records.forEach(r => { const k = r.staff || "（担当者なし）"; (byStaff[k] = byStaff[k] || []).push(r); });
+  const order = staffOrder(Object.keys(byStaff));
+  const cols = `<colgroup><col style="width:8%"><col style="width:7%"><col style="width:3%"><col style="width:3%"><col style="width:3%"><col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:5%"><col style="width:5%"><col style="width:5%"><col style="width:5%"><col style="width:8%"><col style="width:21%"></colgroup>`;
+  const head = `<thead><tr><th>日付</th><th>確認</th><th>大</th><th>中</th><th>小</th><th>洗濯機代</th><th>乾燥機代</th><th>合計</th><th>ジャンボ</th><th>バス</th><th>フェイス</th><th>計</th><th>平均（枚）</th><th>メモ</th></tr></thead>`;
   const sheets = [];
-  Object.keys(groups).sort().reverse().forEach(ym => {
-    const list = groups[ym].slice().sort((a,b)=> a.date < b.date ? -1 : 1);
+  order.forEach(staff => {
+    const list = byStaff[staff].slice().sort((a,b)=> a.date < b.date ? -1 : 1);
     let tWash=0,tDry=0,tTot=0,tJ=0,tB=0,tF=0,tTw=0,tFee=0;
     const rows = list.map(r => {
       const sz = recSizes(r), wc = washerCost(r), dry = Number(r.fee||0), tot = wc+dry, tw = towelTotal(r);
@@ -1081,15 +1084,17 @@ function buildListPdf(){
       const fee = outsourceFee(tw);
       const per = tw>0 ? "¥"+(fee/tw).toFixed(1) : "—";
       tWash+=wc; tDry+=dry; tTot+=tot; tJ+=j; tB+=b; tF+=f; tTw+=tw; tFee+=fee;
-      const p = r.date.split("-").map(Number);
+      const p = normIsoDate(r.date).split("-").map(Number);
       const dt = p[1]+"/"+p[2]+"("+WEEK[new Date(p[0],p[1]-1,p[2]).getDay()]+")";
-      return `<tr><td class="l">${esc(dt)}</td><td class="l">${esc(r.staff)}</td><td class="l">${esc(r.confirmer||"")}</td><td>${sz["大"]||0}</td><td>${sz["中"]||0}</td><td>${sz["小"]||0}</td><td>¥${yen(wc)}</td><td>¥${yen(dry)}</td><td>¥${yen(tot)}</td><td>${yen(j)}</td><td>${yen(b)}</td><td>${yen(f)}</td><td>${yen(tw)}</td><td>${esc(per)}</td><td class="memo">${esc(r.memo||"")}</td></tr>`;
+      return `<tr><td class="l">${esc(dt)}</td><td class="l">${esc(r.confirmer||"")}</td><td>${sz["大"]||0}</td><td>${sz["中"]||0}</td><td>${sz["小"]||0}</td><td>¥${yen(wc)}</td><td>¥${yen(dry)}</td><td>¥${yen(tot)}</td><td>${yen(j)}</td><td>${yen(b)}</td><td>${yen(f)}</td><td>${yen(tw)}</td><td>${esc(per)}</td><td class="memo">${esc(r.memo||"")}</td></tr>`;
     }).join("");
     const totPer = tTw>0 ? "¥"+(tFee/tTw).toFixed(1) : "—";
-    const tot = `<tr class="tot"><td class="l" colspan="6">合計（${list.length}件）</td><td>¥${yen(tWash)}</td><td>¥${yen(tDry)}</td><td>¥${yen(tTot)}</td><td>${yen(tJ)}</td><td>${yen(tB)}</td><td>${yen(tF)}</td><td>${yen(tTw)}</td><td>${esc(totPer)}</td><td></td></tr>`;
+    const tot = `<tr class="tot"><td class="l" colspan="5">合計（${list.length}件）</td><td>¥${yen(tWash)}</td><td>¥${yen(tDry)}</td><td>¥${yen(tTot)}</td><td>${yen(tJ)}</td><td>${yen(tB)}</td><td>${yen(tF)}</td><td>${yen(tTw)}</td><td>${esc(totPer)}</td><td></td></tr>`;
+    const months = [...new Set(list.map(r => normIsoDate(r.date).slice(0,7)))].sort();
+    const span = months.length ? (months.length === 1 ? formatMonthJp(months[0]) : formatMonthJp(months[0]) + "〜" + formatMonthJp(months[months.length-1])) : "";
     sheets.push(`<div class="lst-sheet">
-      <div class="pr-title">記録一覧（${esc(formatMonthJp(ym))}）</div>
-      <div class="pr-meta">発行日：${esc(issueDate)}　／　${list.length}件</div>
+      <div class="pr-title">記録一覧 ／ 担当：${esc(staff)}</div>
+      <div class="pr-meta">発行日：${esc(issueDate)}　／　${esc(span)}　／　${list.length}件</div>
       <table class="lst-tbl">${cols}${head}<tbody>${rows}${tot}</tbody></table>
     </div>`);
   });
