@@ -188,6 +188,10 @@
   table.rec-tbl td.zero{color:#cbd5e1;}
   table.rec-tbl tr.foot td{font-weight:800;background:#eef2f6;border-top:2px solid var(--border);border-bottom:none;color:#0f172a;}
   table.rec-tbl tr.foot td.sum{color:var(--primary-dark);}
+  table.rec-tbl tr.grp td{background:#e6fbf6;color:var(--primary-dark);font-weight:800;text-align:left;border-top:2px solid var(--border);font-size:14px;}
+  table.rec-tbl tr.grp .grp-n{font-weight:600;color:var(--muted);font-size:12px;}
+  table.rec-tbl tr.sub td{font-weight:800;background:#f4f7f9;color:#0f172a;}
+  table.rec-tbl tr.sub td.sum{color:var(--primary-dark);}
   table.rec-tbl td.act{white-space:nowrap;text-align:center;}
   .btn-mini{padding:4px 8px;font-size:13px;line-height:1;border-radius:8px;cursor:pointer;background:#fff;border:1.5px solid var(--border);}
   .btn-mini.e{color:var(--primary);border-color:var(--primary);margin-right:4px;}
@@ -389,6 +393,10 @@
       <div class="section-title">
         <h2>📋 記録一覧</h2>
         <span class="count" id="listCount"></span>
+      </div>
+      <div class="seg" id="listSeg">
+        <button type="button" class="seg-btn active" data-lmode="date">📅 日付順</button>
+        <button type="button" class="seg-btn" data-lmode="staff">👤 担当者別</button>
       </div>
       <div style="margin-bottom:6px;display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-csv btn-sm" id="refreshBtn">🔄 最新に更新</button>
@@ -826,12 +834,44 @@ function sortByDateDesc(a,b){
   if(a.date !== b.date) return a.date < b.date ? 1 : -1;
   return (a.createdAt||"") < (b.createdAt||"") ? 1 : -1;
 }
+let listMode = "date";   // "date"=日付順, "staff"=担当者別
+function listColCount(){ return 3 + WASHER_SIZES.length + 3 + TOWEL_TYPES.length + 3; }
+// 1記録ぶんの行
+function listRowHtml(r){
+  const sz = recSizes(r), wc = washerCost(r), dry = Number(r.fee||0), tot = wc+dry, tw = towelTotal(r);
+  return `<tr>
+    <td class="l">${esc(formatDateJp(r.date))}</td>
+    <td class="l">${esc(r.staff||"")}</td>
+    <td class="l">${esc(r.confirmer||"")}</td>
+    ${WASHER_SIZES.map(s => { const n=Number(sz[s]||0); return `<td class="${n?"":"zero"}">${n||"–"}</td>`; }).join("")}
+    <td class="amt">¥${yen(wc)}</td><td class="amt">¥${yen(dry)}</td><td class="sum">¥${yen(tot)}</td>
+    ${TOWEL_TYPES.map(t => { const v=(r.towels&&r.towels[t])||0; return `<td class="${v?"":"zero"}">${v||"–"}</td>`; }).join("")}
+    <td class="amt">${yen(tw)}</td>
+    <td class="memo" title="${esc(r.memo||"")}">${r.memo ? esc(r.memo) : ""}</td>
+    <td class="act">
+      <button class="btn-mini e" data-edit="${r.id}" title="編集">✏️</button>
+      <button class="btn-mini d" data-del="${r.id}" title="削除">🗑️</button>
+    </td>
+  </tr>`;
+}
+// 合計・小計の行
+function listTotalRow(label, list, cls){
+  let wash=0,dry=0,tot=0,tw=0; const tt={};
+  list.forEach(r => { const wc=washerCost(r), d=Number(r.fee||0); wash+=wc; dry+=d; tot+=wc+d; tw+=towelTotal(r);
+    TOWEL_TYPES.forEach(t => { tt[t]=(tt[t]||0)+((r.towels&&r.towels[t])||0); }); });
+  return `<tr class="${cls}">
+    <td class="l" colspan="${3 + WASHER_SIZES.length}">${esc(label)}</td>
+    <td>¥${yen(wash)}</td><td>¥${yen(dry)}</td><td class="sum">¥${yen(tot)}</td>
+    ${TOWEL_TYPES.map(t => `<td>${yen(tt[t]||0)}</td>`).join("")}
+    <td>${yen(tw)}</td><td></td><td></td>
+  </tr>`;
+}
 function renderList(){
-  const records = loadRecords().slice().sort(sortByDateDesc);
+  const all = loadRecords();
   const area = document.getElementById("listArea");
-  document.getElementById("listCount").textContent = records.length ? `全 ${records.length} 件` : "";
+  document.getElementById("listCount").textContent = all.length ? `全 ${all.length} 件` : "";
 
-  if(!records.length){
+  if(!all.length){
     area.innerHTML = `<div class="empty"><div class="ico">🧺</div>
       <p>まだ記録がありません</p>
       <p>「📝 報告」から最初の1件を入力してみましょう。</p></div>`;
@@ -845,36 +885,26 @@ function renderList(){
     <th>計</th><th class="l">メモ</th><th>操作</th>
   </tr>`;
 
-  let tWash=0, tDry=0, tTot=0, tTw=0; const tT={};
-  const rows = records.map(r => {
-    const sz = recSizes(r), wc = washerCost(r), dry = Number(r.fee||0), tot = wc+dry, tw = towelTotal(r);
-    tWash+=wc; tDry+=dry; tTot+=tot; tTw+=tw;
-    return `<tr>
-      <td class="l">${esc(formatDateJp(r.date))}</td>
-      <td class="l">${esc(r.staff||"")}</td>
-      <td class="l">${esc(r.confirmer||"")}</td>
-      ${WASHER_SIZES.map(s => { const n=Number(sz[s]||0); return `<td class="${n?"":"zero"}">${n||"–"}</td>`; }).join("")}
-      <td class="amt">¥${yen(wc)}</td><td class="amt">¥${yen(dry)}</td><td class="sum">¥${yen(tot)}</td>
-      ${TOWEL_TYPES.map(t => { const v=(r.towels&&r.towels[t])||0; tT[t]=(tT[t]||0)+v; return `<td class="${v?"":"zero"}">${v||"–"}</td>`; }).join("")}
-      <td class="amt">${yen(tw)}</td>
-      <td class="memo" title="${esc(r.memo||"")}">${r.memo ? esc(r.memo) : ""}</td>
-      <td class="act">
-        <button class="btn-mini e" data-edit="${r.id}" title="編集">✏️</button>
-        <button class="btn-mini d" data-del="${r.id}" title="削除">🗑️</button>
-      </td>
-    </tr>`;
-  }).join("");
-
-  const foot = `<tr class="foot">
-    <td class="l" colspan="${3 + WASHER_SIZES.length}">合計（${records.length}件）</td>
-    <td>¥${yen(tWash)}</td><td>¥${yen(tDry)}</td><td class="sum">¥${yen(tTot)}</td>
-    ${TOWEL_TYPES.map(t => `<td>${yen(tT[t]||0)}</td>`).join("")}
-    <td>${yen(tTw)}</td><td></td><td></td>
-  </tr>`;
+  let body;
+  if(listMode === "staff"){
+    const byStaff = {};
+    all.forEach(r => { const k=r.staff||"（担当者なし）"; (byStaff[k]=byStaff[k]||[]).push(r); });
+    const order = staffOrder(Object.keys(byStaff));
+    const cc = listColCount();
+    body = order.map(staff => {
+      const list = byStaff[staff].slice().sort(sortByDateDesc);
+      const grp = `<tr class="grp"><td class="l" colspan="${cc}">👤 ${esc(staff)}　<span class="grp-n">${list.length}件</span></td></tr>`;
+      return grp + list.map(listRowHtml).join("") + listTotalRow(`${staff} 小計`, list, "sub");
+    }).join("");
+    body += listTotalRow(`全体合計（${all.length}件）`, all, "foot");
+  } else {
+    const list = all.slice().sort(sortByDateDesc);
+    body = list.map(listRowHtml).join("") + listTotalRow(`合計（${all.length}件）`, all, "foot");
+  }
 
   area.innerHTML = `<div class="list-wrap"><table class="rec-tbl">
     <thead>${head}</thead>
-    <tbody>${rows}${foot}</tbody>
+    <tbody>${body}</tbody>
   </table></div>`;
 
   area.querySelectorAll("[data-edit]").forEach(b => b.addEventListener("click", () => startEdit(b.dataset.edit)));
@@ -1022,6 +1052,11 @@ document.querySelectorAll("#sumSeg .seg-btn").forEach(b => b.addEventListener("c
   summaryMode = b.dataset.mode;
   document.querySelectorAll("#sumSeg .seg-btn").forEach(x => x.classList.toggle("active", x === b));
   renderSummary();
+}));
+document.querySelectorAll("#listSeg .seg-btn").forEach(b => b.addEventListener("click", () => {
+  listMode = b.dataset.lmode;
+  document.querySelectorAll("#listSeg .seg-btn").forEach(x => x.classList.toggle("active", x === b));
+  renderList();
 }));
 
 // 外注費 明細表（印刷用）を組み立てる：月ごと → 担当者ごとに日別明細＋小計、月合計

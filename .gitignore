@@ -1,0 +1,6 @@
+# ローカル専用（公開リポジトリに含めない）
+.claude/
+*.bat
+*.tmp
+Thumbs.db
+.DS_Store
