@@ -203,6 +203,9 @@
   table.rec-tbl tr.grp .grp-n{font-weight:600;color:var(--muted);font-size:12px;}
   table.rec-tbl tr.sub td{font-weight:800;background:#f4f7f9;color:#0f172a;}
   table.rec-tbl tr.sub td.sum{color:var(--primary-dark);}
+  table.rec-tbl tr.pay td{background:#fff7ed;color:#9a3412;font-weight:700;font-size:13px;text-align:left;white-space:normal;border-bottom:1px solid var(--border);}
+  table.rec-tbl tr.pay b{color:#c2410c;font-size:15px;}
+  table.rec-tbl tr.pay.grand td{background:#ffedd5;border-top:2px solid #fdba74;}
   table.rec-tbl td.act{white-space:nowrap;text-align:center;}
   .btn-mini{padding:4px 8px;font-size:13px;line-height:1;border-radius:8px;cursor:pointer;background:#fff;border:1.5px solid var(--border);}
   .btn-mini.e{color:var(--primary);border-color:var(--primary);margin-right:4px;}
@@ -924,12 +927,18 @@ function renderList(){
     all.forEach(r => { const k=r.staff||"（担当者なし）"; (byStaff[k]=byStaff[k]||[]).push(r); });
     const order = staffOrder(Object.keys(byStaff));
     const cc = listColCount();
+    let gFee=0, gPrep=0, gClean=0;
     body = order.map(staff => {
       const list = byStaff[staff].slice().sort(sortByDateDesc);
+      const sd = staffDayGroups(list);
+      const pf = sd.reduce((s,g)=> s + g.fee, 0), pp = sd.reduce((s,g)=> s + g.prep, 0), pc = sd.reduce((s,g)=> s + g.cleanup, 0);
+      gFee+=pf; gPrep+=pp; gClean+=pc;
       const grp = `<tr class="grp"><td class="l" colspan="${cc}">👤 ${esc(staff)}　<span class="grp-n">${list.length}件</span></td></tr>`;
-      return grp + list.map(listRowHtml).join("") + listTotalRow(`${staff} 小計`, list, "sub");
+      const pay = `<tr class="pay"><td class="l" colspan="${cc}">💰 ${esc(staff)} お支払い：外注費 ¥${yen(pf)} ＋ 準備 ¥${yen(pp)} ＋ 片付け ¥${yen(pc)} ＝ <b>¥${yen(pf+pp+pc)}</b></td></tr>`;
+      return grp + list.map(listRowHtml).join("") + listTotalRow(`${staff} 小計`, list, "sub") + pay;
     }).join("");
     body += listTotalRow(`全体合計（${all.length}件）`, all, "foot");
+    body += `<tr class="pay grand"><td class="l" colspan="${cc}">💰 お支払い総額：外注費 ¥${yen(gFee)} ＋ 準備 ¥${yen(gPrep)} ＋ 片付け ¥${yen(gClean)} ＝ <b>¥${yen(gFee+gPrep+gClean)}</b></td></tr>`;
   } else {
     const list = all.slice().sort(sortByDateDesc);
     body = list.map(listRowHtml).join("") + listTotalRow(`合計（${all.length}件）`, all, "foot");
