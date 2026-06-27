@@ -184,10 +184,15 @@
   .btn-del{background:#fff;color:var(--danger);border:1.5px solid #fecaca;}
 
   /* ====== 記録一覧（テーブル） ====== */
-  .list-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);background:var(--card);}
+  .list-wrap{overflow:auto;-webkit-overflow-scrolling:touch;max-height:calc(100vh - 350px);min-height:200px;border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);background:var(--card);}
+  /* 横スクロールバーを太く・つかみやすく */
+  .list-wrap::-webkit-scrollbar{height:15px;width:12px;}
+  .list-wrap::-webkit-scrollbar-thumb{background:#94a3b8;border-radius:8px;border:3px solid #fff;}
+  .list-wrap::-webkit-scrollbar-thumb:hover{background:#64748b;}
+  .list-wrap::-webkit-scrollbar-track{background:#eef2f6;border-radius:8px;}
   table.rec-tbl{width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap;}
   table.rec-tbl th,table.rec-tbl td{padding:7px 9px;border-bottom:1px solid var(--border);text-align:right;}
-  table.rec-tbl thead th{background:#f1f5f9;color:#334155;font-size:11px;font-weight:800;text-align:center;border-bottom:2px solid var(--border);}
+  table.rec-tbl thead th{background:#f1f5f9;color:#334155;font-size:11px;font-weight:800;text-align:center;border-bottom:2px solid var(--border);position:sticky;top:0;z-index:2;}
   table.rec-tbl th.l,table.rec-tbl td.l{text-align:left;}
   table.rec-tbl tbody tr:nth-child(even){background:#fafbfc;}
   table.rec-tbl td.amt{font-weight:700;color:#0f172a;}
@@ -919,22 +924,26 @@ function listTotalRow(label, list, cls){
     <td>${yen(tw)}</td><td>¥${yen(fee)}</td><td class="sum">¥${yen(pay)}</td><td></td><td></td>
   </tr>`;
 }
-// 担当者別（コンパクト）：日付 / 作業 / 計 / 外注費 / 金額（横スクロール不要で画面に収まる）
+// 担当者別（コンパクト）：日付 / 作業 / タオル種類別 / 計 / 外注費 / 金額
+function staffColCount(){ return 2 + TOWEL_TYPES.length + 3; }
 function listRowCompact(r){
   const tw = towelTotal(r);
   return `<tr>
     <td class="l">${esc(formatDateJp(r.date))}</td>
     ${workCell(r)}
+    ${TOWEL_TYPES.map(t => { const v=(r.towels&&r.towels[t])||0; return `<td class="${v?"":"zero"}">${v||"–"}</td>`; }).join("")}
     <td class="amt">${yen(tw)}</td>
     <td class="amt">¥${yen(outsourceFee(tw))}</td>
     <td class="sum">¥${yen(recPay(r))}</td>
   </tr>`;
 }
 function listTotalCompact(label, list, cls){
-  let tw=0, fee=0, pay=0;
-  list.forEach(r => { const t=towelTotal(r); tw+=t; fee+=outsourceFee(t); pay+=recPay(r); });
+  let tw=0, fee=0, pay=0; const tt={};
+  list.forEach(r => { const t=towelTotal(r); tw+=t; fee+=outsourceFee(t); pay+=recPay(r);
+    TOWEL_TYPES.forEach(k => { tt[k]=(tt[k]||0)+((r.towels&&r.towels[k])||0); }); });
   return `<tr class="${cls}">
     <td class="l" colspan="2">${esc(label)}</td>
+    ${TOWEL_TYPES.map(k => `<td>${yen(tt[k]||0)}</td>`).join("")}
     <td>${yen(tw)}</td><td>¥${yen(fee)}</td><td class="sum">¥${yen(pay)}</td>
   </tr>`;
 }
@@ -951,9 +960,9 @@ function renderList(){
   }
   let head, body;
   if(listMode === "staff"){
-    // 担当者別：支払い重視のコンパクト表（横スクロールせず画面に収まる）。詳細・編集は「日付順」で。
-    head = `<tr><th class="l">日付</th><th>作業</th><th>計</th><th>外注費</th><th>金額</th></tr>`;
-    const cc = 5;
+    // 担当者別：支払い重視の表（日付/作業/タオル種類別/計/外注費/金額）。詳細・編集は「日付順」で。
+    head = `<tr><th class="l">日付</th><th>作業</th>${TOWEL_TYPES.map(t => `<th>${esc(towelShort(t))}</th>`).join("")}<th>計</th><th>外注費</th><th>金額</th></tr>`;
+    const cc = staffColCount();
     const byStaff = {};
     all.forEach(r => { const k=r.staff||"（担当者なし）"; (byStaff[k]=byStaff[k]||[]).push(r); });
     let gFee=0, gPrep=0, gClean=0;
