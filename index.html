@@ -241,6 +241,8 @@
   .stat .lab{font-size:11px;color:var(--muted);font-weight:700;margin-top:4px;}
   .size-break{margin-top:12px;display:flex;flex-wrap:wrap;gap:6px;}
   .size-chip{font-size:12px;background:#f1f5f9;border-radius:999px;padding:4px 10px;color:#475569;font-weight:600;}
+  .exp-total{margin-top:12px;padding:12px 14px;background:linear-gradient(135deg,#fff7ed,#fffbeb);border:1px solid #fed7aa;border-radius:12px;font-size:15px;font-weight:800;color:#9a3412;text-align:center;}
+  .exp-total b{font-size:22px;color:#c2410c;margin-left:4px;}
 
   /* ====== 空の状態 ====== */
   .empty{text-align:center;color:var(--muted);padding:48px 20px;}
@@ -441,6 +443,7 @@
       <div class="seg" id="sumSeg">
         <button type="button" class="seg-btn active" data-mode="all">📊 全体</button>
         <button type="button" class="seg-btn" data-mode="staff">👤 担当者別</button>
+        <button type="button" class="seg-btn" data-mode="expense">💴 経費</button>
       </div>
       <div style="margin-bottom:14px;">
         <button class="btn btn-csv btn-sm" id="printBtn">🖨️ 外注費の明細を印刷（担当者別・月末締め）</button>
@@ -1008,7 +1011,40 @@ function renderSummary(){
       <p>報告を入力すると、ここに集計が表示されます。</p></div>`;
     return;
   }
-  area.innerHTML = (summaryMode === "staff") ? renderSummaryStaff(records) : renderSummaryAll(records);
+  area.innerHTML = (summaryMode === "staff") ? renderSummaryStaff(records)
+    : (summaryMode === "expense") ? renderSummaryExpense(records)
+    : renderSummaryAll(records);
+}
+
+// 💴 経費：洗濯機代 ＋ 乾燥機代 ＋ 人件費（外注費＋準備＋片付け）＝ 総経費（月ごと）
+function renderSummaryExpense(records){
+  const groups = groupByMonth(records);
+  return Object.keys(groups).sort().reverse().map(ym => {
+    const list = groups[ym];
+    const washer = list.reduce((s,r)=> s + washerCost(r), 0);
+    const dryer  = list.reduce((s,r)=> s + Number(r.fee||0), 0);
+    const sd = staffDayGroups(list);
+    const fee   = sd.reduce((s,g)=> s + g.fee, 0);
+    const prep  = sd.reduce((s,g)=> s + g.prep, 0);
+    const clean = sd.reduce((s,g)=> s + g.cleanup, 0);
+    const labor = fee + prep + clean;
+    const total = washer + dryer + labor;
+    return `
+      <div class="month-card">
+        <div class="month-head">
+          <h3 class="month-title">📅 ${esc(formatMonthJp(ym))}</h3>
+          <span class="month-total">総経費 ¥${yen(total)}</span>
+        </div>
+        <div class="stat-row">
+          <div class="stat"><div class="num"><small>¥</small>${yen(washer)}</div><div class="lab">洗濯機代</div></div>
+          <div class="stat"><div class="num"><small>¥</small>${yen(dryer)}</div><div class="lab">乾燥機代</div></div>
+          <div class="stat"><div class="num"><small>¥</small>${yen(labor)}</div><div class="lab">人件費</div></div>
+        </div>
+        <div class="exp-total">総経費　<b>¥${yen(total)}</b></div>
+        <div class="month-sub">人件費の内訳：外注費 ¥${yen(fee)} ＋ 準備 ¥${yen(prep)} ＋ 片付け ¥${yen(clean)}</div>
+        <div class="month-sub">経費の内訳：洗濯機代 ¥${yen(washer)} ＋ 乾燥機代 ¥${yen(dryer)} ＋ 人件費 ¥${yen(labor)}</div>
+      </div>`;
+  }).join("");
 }
 
 // 📊 全体の集計：すべての数字
