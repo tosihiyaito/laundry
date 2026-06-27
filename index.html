@@ -434,6 +434,7 @@
         <button class="btn btn-csv btn-sm" id="refreshBtn">🔄 最新に更新</button>
         <button class="btn btn-csv btn-sm" id="csvBtn">⬇️ CSV書き出し</button>
         <button class="btn btn-csv btn-sm" id="listPdfBtn">🖨️ 支払明細をPDF（1人1枚）</button>
+        <button class="btn btn-csv btn-sm" id="dateListPdfBtn">🖨️ 記録一覧を印刷（日付順）</button>
         <button class="btn btn-csv btn-sm" id="importBtn">📥 データ取り込み</button>
         <input type="file" id="importFile" accept=".json,application/json" style="display:none">
       </div>
@@ -1268,6 +1269,39 @@ function buildListPdf(){
 document.getElementById("listPdfBtn").addEventListener("click", () => {
   if(!loadRecords().length){ toast("PDFにするデータがありません", true); return; }
   document.getElementById("printArea").innerHTML = buildListPdf();
+  window.print();
+});
+// 記録一覧（日付順）を1つの表として印刷
+function buildDateListPdf(){
+  const records = loadRecords();
+  if(!records.length) return `<div class="lst-sheet"><div class="pr-title">記録一覧（日付順）</div><p>データがありません。</p></div>`;
+  const issueDate = formatDateJp(todayStr());
+  const list = records.slice().sort((a,b)=> a.date < b.date ? -1 : 1);   // 古い順
+  const months = [...new Set(list.map(r => normIsoDate(r.date).slice(0,7)))].sort();
+  const span = months.length ? (months.length === 1 ? formatMonthJp(months[0]) : formatMonthJp(months[0]) + "〜" + formatMonthJp(months[months.length-1])) : "";
+  const cols = `<colgroup><col style="width:9%"><col style="width:7%"><col style="width:6%"><col style="width:6%"><col style="width:3%"><col style="width:3%"><col style="width:3%"><col style="width:5%"><col style="width:5%"><col style="width:5%"><col style="width:5%"><col style="width:9%"><col style="width:9%"><col style="width:25%"></colgroup>`;
+  const head = `<thead><tr><th>日付</th><th>担当</th><th>確認</th><th>作業</th>${WASHER_SIZES.map(s=>`<th>${esc(s)}</th>`).join("")}${TOWEL_TYPES.map(t=>`<th>${esc(towelShort(t))}</th>`).join("")}<th>計</th><th>外注費</th><th>金額</th><th>メモ</th></tr></thead>`;
+  let tTw=0, tFee=0, tPay=0; const tt={}, sc={};
+  const rows = list.map(r => {
+    const sz = recSizes(r), tw = towelTotal(r), fee = outsourceFee(tw), pay = recPay(r);
+    tTw+=tw; tFee+=fee; tPay+=pay;
+    TOWEL_TYPES.forEach(t => { tt[t]=(tt[t]||0)+((r.towels&&r.towels[t])||0); });
+    WASHER_SIZES.forEach(s => { sc[s]=(sc[s]||0)+Number(sz[s]||0); });
+    const p = normIsoDate(r.date).split("-").map(Number);
+    const dt = p[1]+"/"+p[2]+"("+WEEK[new Date(p[0],p[1]-1,p[2]).getDay()]+")";
+    const work = [prepDone(r)?"準":"", r.cleanup===true?"片":""].filter(Boolean).join("・") || "—";
+    return `<tr><td class="l">${esc(dt)}</td><td class="l">${esc(r.staff||"")}</td><td class="l">${esc(r.confirmer||"")}</td><td>${esc(work)}</td>${WASHER_SIZES.map(s=>`<td>${yen(sz[s]||0)}</td>`).join("")}${TOWEL_TYPES.map(t=>`<td>${yen((r.towels&&r.towels[t])||0)}</td>`).join("")}<td>${yen(tw)}</td><td>¥${yen(fee)}</td><td>¥${yen(pay)}</td><td class="memo">${esc(r.memo||"")}</td></tr>`;
+  }).join("");
+  const tot = `<tr class="tot"><td class="l" colspan="${4 + WASHER_SIZES.length}">合計（${list.length}件）</td>${TOWEL_TYPES.map(t=>`<td>${yen(tt[t]||0)}</td>`).join("")}<td>${yen(tTw)}</td><td>¥${yen(tFee)}</td><td>¥${yen(tPay)}</td><td></td></tr>`;
+  return `<div class="lst-sheet">
+    <div class="pr-title">記録一覧（日付順）</div>
+    <div class="pr-meta">${esc(STATEMENT_TITLE)}　／　発行日：${esc(issueDate)}　／　対象：${esc(span)}　／　${list.length}件</div>
+    <table class="lst-tbl">${cols}${head}<tbody>${rows}${tot}</tbody></table>
+  </div>`;
+}
+document.getElementById("dateListPdfBtn").addEventListener("click", () => {
+  if(!loadRecords().length){ toast("印刷するデータがありません", true); return; }
+  document.getElementById("printArea").innerHTML = buildDateListPdf();
   window.print();
 });
 
