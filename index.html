@@ -876,15 +876,21 @@ function sortByDateDesc(a,b){
   if(a.date !== b.date) return a.date < b.date ? 1 : -1;
   return (a.createdAt||"") < (b.createdAt||"") ? 1 : -1;
 }
+function sortByDateAsc(a,b){   // 上が過去（古い順）
+  if(a.date !== b.date) return a.date < b.date ? -1 : 1;
+  return (a.createdAt||"") < (b.createdAt||"") ? -1 : 1;
+}
+// その日の金額（支払い）＝ 外注費 ＋ 準備 ＋ 片付け
+function recPay(r){ return outsourceFee(towelTotal(r)) + (prepDone(r)?PREP_FEE:0) + (r&&r.cleanup===true?CLEANUP_FEE:0); }
 let listMode = "date";   // "date"=日付順, "staff"=担当者別
-function listColCount(){ return 4 + WASHER_SIZES.length + TOWEL_TYPES.length + 4; } // 日付担当確認作業 + サイズ + タオル + 計外注費メモ操作
+function listColCount(){ return 4 + WASHER_SIZES.length + TOWEL_TYPES.length + 5; } // 日付担当確認作業 + サイズ + タオル + 計外注費金額メモ操作
 // 準備・片付けの表示（やった方を強調）
 function workCell(r){
   return `<td class="chk-cell"><span class="wk ${prepDone(r)?"on":""}">準</span><span class="wk ${r.cleanup?"on":""}">片</span></td>`;
 }
 // 1記録ぶんの行
 function listRowHtml(r){
-  const sz = recSizes(r), tw = towelTotal(r), fee = outsourceFee(tw);
+  const sz = recSizes(r), tw = towelTotal(r), fee = outsourceFee(tw), pay = recPay(r);
   return `<tr>
     <td class="l">${esc(formatDateJp(r.date))}</td>
     <td class="l">${esc(r.staff||"")}</td>
@@ -893,7 +899,8 @@ function listRowHtml(r){
     ${WASHER_SIZES.map(s => { const n=Number(sz[s]||0); return `<td class="${n?"":"zero"}">${n||"–"}</td>`; }).join("")}
     ${TOWEL_TYPES.map(t => { const v=(r.towels&&r.towels[t])||0; return `<td class="${v?"":"zero"}">${v||"–"}</td>`; }).join("")}
     <td class="amt">${yen(tw)}</td>
-    <td class="sum">¥${yen(fee)}</td>
+    <td class="amt">¥${yen(fee)}</td>
+    <td class="sum">¥${yen(pay)}</td>
     <td class="memo" title="${esc(r.memo||"")}">${r.memo ? esc(r.memo) : ""}</td>
     <td class="act">
       <button class="btn-mini e" data-edit="${r.id}" title="編集">✏️</button>
@@ -903,13 +910,13 @@ function listRowHtml(r){
 }
 // 合計・小計の行（タオル枚数 ＋ 外注費）
 function listTotalRow(label, list, cls){
-  let tw=0, fee=0; const tt={};
-  list.forEach(r => { const t=towelTotal(r); tw+=t; fee+=outsourceFee(t);
+  let tw=0, fee=0, pay=0; const tt={};
+  list.forEach(r => { const t=towelTotal(r); tw+=t; fee+=outsourceFee(t); pay+=recPay(r);
     TOWEL_TYPES.forEach(k => { tt[k]=(tt[k]||0)+((r.towels&&r.towels[k])||0); }); });
   return `<tr class="${cls}">
     <td class="l" colspan="${4 + WASHER_SIZES.length}">${esc(label)}</td>
     ${TOWEL_TYPES.map(k => `<td>${yen(tt[k]||0)}</td>`).join("")}
-    <td>${yen(tw)}</td><td class="sum">¥${yen(fee)}</td><td></td><td></td>
+    <td>${yen(tw)}</td><td>¥${yen(fee)}</td><td class="sum">¥${yen(pay)}</td><td></td><td></td>
   </tr>`;
 }
 function renderList(){
@@ -927,7 +934,7 @@ function renderList(){
     <th class="l">日付</th><th class="l">担当</th><th class="l">確認</th><th>作業</th>
     ${WASHER_SIZES.map(s => `<th>${esc(s)}</th>`).join("")}
     ${TOWEL_TYPES.map(t => `<th>${esc(towelShort(t))}</th>`).join("")}
-    <th>計</th><th>外注費</th><th class="l">メモ</th><th>操作</th>
+    <th>計</th><th>外注費</th><th>金額</th><th class="l">メモ</th><th>操作</th>
   </tr>`;
 
   let body;
@@ -938,7 +945,7 @@ function renderList(){
     const cc = listColCount();
     let gFee=0, gPrep=0, gClean=0;
     body = order.map(staff => {
-      const list = byStaff[staff].slice().sort(sortByDateDesc);
+      const list = byStaff[staff].slice().sort(sortByDateAsc);
       const sd = staffDayGroups(list);
       const pf = sd.reduce((s,g)=> s + g.fee, 0), pp = sd.reduce((s,g)=> s + g.prep, 0), pc = sd.reduce((s,g)=> s + g.cleanup, 0);
       gFee+=pf; gPrep+=pp; gClean+=pc;
@@ -949,7 +956,7 @@ function renderList(){
     body += listTotalRow(`全体合計（${all.length}件）`, all, "foot");
     body += `<tr class="pay grand"><td class="l" colspan="${cc}">💰 お支払い総額：外注費 ¥${yen(gFee)} ＋ 準備 ¥${yen(gPrep)} ＋ 片付け ¥${yen(gClean)} ＝ <b>¥${yen(gFee+gPrep+gClean)}</b></td></tr>`;
   } else {
-    const list = all.slice().sort(sortByDateDesc);
+    const list = all.slice().sort(sortByDateAsc);
     body = list.map(listRowHtml).join("") + listTotalRow(`合計（${all.length}件）`, all, "foot");
   }
 
