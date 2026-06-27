@@ -322,7 +322,9 @@
   #printArea table.pr-tbl th,#printArea table.pr-tbl td{border:1px solid #888;padding:5px 7px;text-align:right;}
   #printArea table.pr-tbl th{background:#eee;text-align:center;}
   #printArea table.pr-tbl td.dt{text-align:left;}
+  #printArea table.pr-tbl td.c{text-align:center;}
   #printArea table.pr-tbl tr.sub td{font-weight:800;background:#f3f3f3;}
+  #printArea .pr-sign{margin-top:20px;font-size:12px;color:#333;}
   #printArea .pr-grand{margin-top:14px;padding:9px;border:2px solid #000;font-size:13px;font-weight:800;text-align:center;}
   /* 記録一覧PDF（A4 1枚・月ごと） */
   #printArea .lst-sheet{page-break-after:always;margin-bottom:28px;}
@@ -431,7 +433,7 @@
       <div style="margin-bottom:6px;display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-csv btn-sm" id="refreshBtn">🔄 最新に更新</button>
         <button class="btn btn-csv btn-sm" id="csvBtn">⬇️ CSV書き出し</button>
-        <button class="btn btn-csv btn-sm" id="listPdfBtn">🖨️ 一覧をPDF（担当者別・A4）</button>
+        <button class="btn btn-csv btn-sm" id="listPdfBtn">🖨️ 支払明細をPDF（1人1枚）</button>
         <button class="btn btn-csv btn-sm" id="importBtn">📥 データ取り込み</button>
         <input type="file" id="importFile" accept=".json,application/json" style="display:none">
       </div>
@@ -1226,36 +1228,39 @@ document.getElementById("printBtn").addEventListener("click", () => {
 // 記録一覧（月ごと・A4 1枚）をPDF/印刷用に組み立てる
 function buildListPdf(){
   const records = loadRecords();
-  if(!records.length) return `<div class="lst-sheet"><div class="pr-title">記録一覧</div><p>データがありません。</p></div>`;
+  if(!records.length) return `<div class="pr-sheet"><div class="pr-title">${esc(STATEMENT_TITLE)}</div><p>データがありません。</p></div>`;
   const issueDate = formatDateJp(todayStr());
-  // 担当者ごとにまとめる（1人1ページ）
+  // 担当者ごとに1人1ページの支払明細
   const byStaff = {};
   records.forEach(r => { const k = r.staff || "（担当者なし）"; (byStaff[k] = byStaff[k] || []).push(r); });
   const order = staffOrder(Object.keys(byStaff));
-  const cols = `<colgroup><col style="width:8%"><col style="width:7%"><col style="width:3%"><col style="width:3%"><col style="width:3%"><col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:5%"><col style="width:5%"><col style="width:5%"><col style="width:5%"><col style="width:8%"><col style="width:21%"></colgroup>`;
-  const head = `<thead><tr><th>日付</th><th>確認</th><th>大</th><th>中</th><th>小</th><th>洗濯機代</th><th>乾燥機代</th><th>合計</th><th>ジャンボ</th><th>バス</th><th>フェイス</th><th>計</th><th>平均（枚）</th><th>メモ</th></tr></thead>`;
+  const head = `<thead><tr><th>日付</th><th>作業</th>${TOWEL_TYPES.map(t=>`<th>${esc(towelShort(t))}</th>`).join("")}<th>計</th><th>外注費</th><th>金額</th></tr></thead>`;
   const sheets = [];
   order.forEach(staff => {
-    const list = byStaff[staff].slice().sort((a,b)=> a.date < b.date ? -1 : 1);
-    let tWash=0,tDry=0,tTot=0,tJ=0,tB=0,tF=0,tTw=0,tFee=0;
+    const list = byStaff[staff].slice().sort((a,b)=> a.date < b.date ? -1 : 1);   // 古い順
+    const sd = staffDayGroups(list);
+    const sFee = sd.reduce((s,g)=> s + g.fee, 0), sPrep = sd.reduce((s,g)=> s + g.prep, 0), sClean = sd.reduce((s,g)=> s + g.cleanup, 0);
+    const sPay = sFee + sPrep + sClean;
+    let tTw=0; const tt={};
     const rows = list.map(r => {
-      const sz = recSizes(r), wc = washerCost(r), dry = Number(r.fee||0), tot = wc+dry, tw = towelTotal(r);
-      const j=(r.towels&&r.towels["ジャンボタオル"])||0, b=(r.towels&&r.towels["バスタオル"])||0, f=(r.towels&&r.towels["フェイスタオル"])||0;
-      const fee = outsourceFee(tw);
-      const per = tw>0 ? "¥"+(fee/tw).toFixed(1) : "—";
-      tWash+=wc; tDry+=dry; tTot+=tot; tJ+=j; tB+=b; tF+=f; tTw+=tw; tFee+=fee;
+      const tw = towelTotal(r), fee = outsourceFee(tw), pay = recPay(r);
+      tTw += tw;
+      TOWEL_TYPES.forEach(t => { tt[t]=(tt[t]||0)+((r.towels&&r.towels[t])||0); });
       const p = normIsoDate(r.date).split("-").map(Number);
       const dt = p[1]+"/"+p[2]+"("+WEEK[new Date(p[0],p[1]-1,p[2]).getDay()]+")";
-      return `<tr><td class="l">${esc(dt)}</td><td class="l">${esc(r.confirmer||"")}</td><td>${sz["大"]||0}</td><td>${sz["中"]||0}</td><td>${sz["小"]||0}</td><td>¥${yen(wc)}</td><td>¥${yen(dry)}</td><td>¥${yen(tot)}</td><td>${yen(j)}</td><td>${yen(b)}</td><td>${yen(f)}</td><td>${yen(tw)}</td><td>${esc(per)}</td><td class="memo">${esc(r.memo||"")}</td></tr>`;
+      const work = [prepDone(r)?"準":"", r.cleanup===true?"片":""].filter(Boolean).join("・") || "—";
+      return `<tr><td class="dt">${esc(dt)}</td><td class="c">${esc(work)}</td>${TOWEL_TYPES.map(t=>`<td>${yen((r.towels&&r.towels[t])||0)}</td>`).join("")}<td>${yen(tw)}</td><td>¥${yen(fee)}</td><td>¥${yen(pay)}</td></tr>`;
     }).join("");
-    const totPer = tTw>0 ? "¥"+(tFee/tTw).toFixed(1) : "—";
-    const tot = `<tr class="tot"><td class="l" colspan="5">合計（${list.length}件）</td><td>¥${yen(tWash)}</td><td>¥${yen(tDry)}</td><td>¥${yen(tTot)}</td><td>${yen(tJ)}</td><td>${yen(tB)}</td><td>${yen(tF)}</td><td>${yen(tTw)}</td><td>${esc(totPer)}</td><td></td></tr>`;
+    const totRow = `<tr class="sub"><td class="dt" colspan="2">合計（${list.length}日）</td>${TOWEL_TYPES.map(t=>`<td>${yen(tt[t]||0)}</td>`).join("")}<td>${yen(tTw)}</td><td>¥${yen(sFee)}</td><td>¥${yen(sPay)}</td></tr>`;
     const months = [...new Set(list.map(r => normIsoDate(r.date).slice(0,7)))].sort();
     const span = months.length ? (months.length === 1 ? formatMonthJp(months[0]) : formatMonthJp(months[0]) + "〜" + formatMonthJp(months[months.length-1])) : "";
-    sheets.push(`<div class="lst-sheet">
-      <div class="pr-title">記録一覧 ／ 担当：${esc(staff)}</div>
-      <div class="pr-meta">発行日：${esc(issueDate)}　／　${esc(span)}　／　${list.length}件</div>
-      <table class="lst-tbl">${cols}${head}<tbody>${rows}${tot}</tbody></table>
+    sheets.push(`<div class="pr-sheet">
+      <div class="pr-title">${esc(STATEMENT_TITLE)}</div>
+      <div class="pr-meta">支払明細書　／　発行日：${esc(issueDate)}　／　対象：${esc(span)}</div>
+      <div class="pr-month">担当：${esc(staff)} 様</div>
+      <table class="pr-tbl">${head}<tbody>${rows}${totRow}</tbody></table>
+      <div class="pr-grand">お支払い金額　¥${yen(sPay)}<br><span style="font-weight:600;font-size:12px;">内訳： 外注費 ¥${yen(sFee)} ＋ 準備 ¥${yen(sPrep)} ＋ 片付け ¥${yen(sClean)}　（タオル ${yen(tTw)}枚・${list.length}日）</span></div>
+      <div class="pr-sign">受領サイン：__________________________</div>
     </div>`);
   });
   return sheets.join("");
