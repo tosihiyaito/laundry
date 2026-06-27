@@ -522,12 +522,14 @@ const STORE_KEY = "laundryRecords_v1";
 const WEEK = ["日","月","火","水","木","金","土"];
 
 /* ---------- データ保存・読込（端末内：localStorage） ---------- */
+// 開発中に誤って混入したテスト記録(a1,a2,b1,t1〜t4)を除外（id が短いこの形だけ。本物のidは長いので影響なし）
+function isJunkId(id){ return /^(a\d|b\d|t[1-4])$/.test(String(id||"")); }
 function loadRecords(){
   try{
     const arr = JSON.parse(localStorage.getItem(STORE_KEY)) || [];
     // クラウド経由で日付がDate文字列化していても表示・集計が壊れないよう読み取り時に正規化
     arr.forEach(r => { if(r && r.date) r.date = normIsoDate(r.date); });
-    return arr;
+    return arr.filter(r => r && r.id && !isJunkId(r.id));
   }
   catch(e){ return []; }
 }
@@ -556,11 +558,17 @@ function cloudPull(done){
       if(data && data.ok && Array.isArray(data.records)){
         const local = loadRecords();
         const byId = {}, cloudIds = {};
+        let hadJunk = false;
         local.forEach(r => { if(r && r.id) byId[r.id] = r; });
-        data.records.forEach(r => { if(r && r.id){ if(r.date) r.date = normIsoDate(r.date); byId[r.id] = r; cloudIds[r.id] = 1; } });
+        data.records.forEach(r => {
+          if(!r || !r.id) return;
+          if(isJunkId(r.id)){ hadJunk = true; return; }   // 混入テスト記録はクラウドから取り込まない
+          if(r.date) r.date = normIsoDate(r.date); byId[r.id] = r; cloudIds[r.id] = 1;
+        });
         localStorage.setItem(STORE_KEY, JSON.stringify(Object.keys(byId).map(k => byId[k])));
         setSyncStatus("☁️ 同期済み");
-        if(local.some(r => r && r.id && !cloudIds[r.id])) cloudPush(); // 端末だけにあった分をクラウドへ
+        // 端末だけにあった分、またはクラウドに混入テストがあった場合は、正しいデータでクラウドを上書き
+        if(hadJunk || local.some(r => r && r.id && !cloudIds[r.id])) cloudPush();
         finish(true);
       } else { setSyncStatus("⚠️ 同期エラー"); finish(false); }
     }catch(e){ setSyncStatus("⚠️ 同期エラー"); finish(false); }
@@ -866,23 +874,23 @@ function sortByDateDesc(a,b){
   return (a.createdAt||"") < (b.createdAt||"") ? 1 : -1;
 }
 let listMode = "date";   // "date"=日付順, "staff"=担当者別
-function listColCount(){ return 3 + 1 + WASHER_SIZES.length + 3 + TOWEL_TYPES.length + 3; }
+function listColCount(){ return 4 + WASHER_SIZES.length + TOWEL_TYPES.length + 4; } // 日付担当確認作業 + サイズ + タオル + 計外注費メモ操作
 // 準備・片付けの表示（やった方を強調）
 function workCell(r){
   return `<td class="chk-cell"><span class="wk ${prepDone(r)?"on":""}">準</span><span class="wk ${r.cleanup?"on":""}">片</span></td>`;
 }
 // 1記録ぶんの行
 function listRowHtml(r){
-  const sz = recSizes(r), wc = washerCost(r), dry = Number(r.fee||0), tot = wc+dry, tw = towelTotal(r);
+  const sz = recSizes(r), tw = towelTotal(r), fee = outsourceFee(tw);
   return `<tr>
     <td class="l">${esc(formatDateJp(r.date))}</td>
     <td class="l">${esc(r.staff||"")}</td>
     <td class="l">${esc(r.confirmer||"")}</td>
     ${workCell(r)}
     ${WASHER_SIZES.map(s => { const n=Number(sz[s]||0); return `<td class="${n?"":"zero"}">${n||"–"}</td>`; }).join("")}
-    <td class="amt">¥${yen(wc)}</td><td class="amt">¥${yen(dry)}</td><td class="sum">¥${yen(tot)}</td>
     ${TOWEL_TYPES.map(t => { const v=(r.towels&&r.towels[t])||0; return `<td class="${v?"":"zero"}">${v||"–"}</td>`; }).join("")}
     <td class="amt">${yen(tw)}</td>
+    <td class="sum">¥${yen(fee)}</td>
     <td class="memo" title="${esc(r.memo||"")}">${r.memo ? esc(r.memo) : ""}</td>
     <td class="act">
       <button class="btn-mini e" data-edit="${r.id}" title="編集">✏️</button>
@@ -890,16 +898,15 @@ function listRowHtml(r){
     </td>
   </tr>`;
 }
-// 合計・小計の行
+// 合計・小計の行（タオル枚数 ＋ 外注費）
 function listTotalRow(label, list, cls){
-  let wash=0,dry=0,tot=0,tw=0; const tt={};
-  list.forEach(r => { const wc=washerCost(r), d=Number(r.fee||0); wash+=wc; dry+=d; tot+=wc+d; tw+=towelTotal(r);
-    TOWEL_TYPES.forEach(t => { tt[t]=(tt[t]||0)+((r.towels&&r.towels[t])||0); }); });
+  let tw=0, fee=0; const tt={};
+  list.forEach(r => { const t=towelTotal(r); tw+=t; fee+=outsourceFee(t);
+    TOWEL_TYPES.forEach(k => { tt[k]=(tt[k]||0)+((r.towels&&r.towels[k])||0); }); });
   return `<tr class="${cls}">
     <td class="l" colspan="${4 + WASHER_SIZES.length}">${esc(label)}</td>
-    <td>¥${yen(wash)}</td><td>¥${yen(dry)}</td><td class="sum">¥${yen(tot)}</td>
-    ${TOWEL_TYPES.map(t => `<td>${yen(tt[t]||0)}</td>`).join("")}
-    <td>${yen(tw)}</td><td></td><td></td>
+    ${TOWEL_TYPES.map(k => `<td>${yen(tt[k]||0)}</td>`).join("")}
+    <td>${yen(tw)}</td><td class="sum">¥${yen(fee)}</td><td></td><td></td>
   </tr>`;
 }
 function renderList(){
@@ -916,9 +923,8 @@ function renderList(){
   const head = `<tr>
     <th class="l">日付</th><th class="l">担当</th><th class="l">確認</th><th>作業</th>
     ${WASHER_SIZES.map(s => `<th>${esc(s)}</th>`).join("")}
-    <th>洗濯機代</th><th>乾燥機代</th><th>合計</th>
     ${TOWEL_TYPES.map(t => `<th>${esc(towelShort(t))}</th>`).join("")}
-    <th>計</th><th class="l">メモ</th><th>操作</th>
+    <th>計</th><th>外注費</th><th class="l">メモ</th><th>操作</th>
   </tr>`;
 
   let body;
