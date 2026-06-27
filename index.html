@@ -309,6 +309,12 @@
   .modal-err{color:var(--danger);font-size:13px;font-weight:700;min-height:18px;margin-top:8px;}
   .modal-btns{display:flex;gap:10px;margin-top:14px;}
   .modal-btns .btn{flex:1;width:auto;}
+  /* 報告前の確認サマリー */
+  .confirm-sum{text-align:left;margin:8px 0 2px;max-height:50vh;overflow:auto;}
+  .confirm-sum .cs-row{display:flex;justify-content:space-between;gap:12px;padding:8px 2px;border-bottom:1px solid var(--border);font-size:14px;}
+  .confirm-sum .cs-row:last-child{border-bottom:none;}
+  .confirm-sum .cs-k{color:var(--muted);font-weight:700;flex:0 0 auto;}
+  .confirm-sum .cs-v{color:#0f172a;font-weight:700;text-align:right;word-break:break-word;}
 
   /* 外注費 明細表（印刷用） */
   #printArea{display:none;color:#000;}
@@ -338,7 +344,7 @@
   @media print{
     @page{margin:14mm;}
     html,body{background:#fff !important;}
-    .wrap, #pwModal, #toast{display:none !important;}
+    .wrap, #pwModal, #confirmModal, #toast{display:none !important;}
     #printArea{display:block !important;}
   }
 </style>
@@ -489,6 +495,19 @@
     <div class="modal-btns">
       <button type="button" class="btn btn-ghost" id="pwCancel">キャンセル</button>
       <button type="button" class="btn btn-primary" id="pwOk">開く</button>
+    </div>
+  </div>
+</div>
+
+<!-- 報告前の確認画面 -->
+<div class="modal-overlay" id="confirmModal">
+  <div class="modal">
+    <div class="modal-ico">📋</div>
+    <h3>内容はこれでよいですか？</h3>
+    <div class="confirm-sum" id="confirmSummary"></div>
+    <div class="modal-btns">
+      <button type="button" class="btn btn-ghost" id="confirmEdit">✏️ 修正する</button>
+      <button type="button" class="btn btn-primary" id="confirmOk">✅ 報告する</button>
     </div>
   </div>
 </div>
@@ -770,17 +789,16 @@ function resetForm(){
 /* ---------- 送信（新規 / 更新） ---------- */
 let editingId = null;
 
+// 送信＝まず入力チェック → 確認画面を表示（実際の保存は確認画面の「報告する」で）
 document.getElementById("recForm").addEventListener("submit", function(e){
   e.preventDefault();
   const date  = document.getElementById("f-date").value;
   const staff = document.getElementById("f-staff").value.trim();
-  const confirmer = document.getElementById("f-confirmer").value.trim();
   const prep = document.getElementById("f-prep").checked;
   const cleanup = document.getElementById("f-cleanup").checked;
   const sizes = readSizes();
   const feeRaw   = document.getElementById("f-fee").value;
   const towels = readTowels();
-  const memo  = document.getElementById("f-memo").value.trim();
 
   if(!date){ toast("日付を入力してください", true); return; }
   if(!staff){ toast("担当者を入力してください", true); return; }
@@ -790,7 +808,54 @@ document.getElementById("recForm").addEventListener("submit", function(e){
     if(feeRaw === ""){ toast("乾燥機の代金を入力してください", true); return; }
     if(TOWEL_TYPES.reduce((s,t)=> s + (towels[t]||0), 0) === 0){ toast("タオルの枚数を入力してください", true); return; }
   }
-
+  showConfirmModal();
+});
+// 確認画面のサマリーを組み立て
+function buildConfirmSummary(){
+  const date = document.getElementById("f-date").value;
+  const staff = document.getElementById("f-staff").value.trim();
+  const confirmer = document.getElementById("f-confirmer").value.trim();
+  const prep = document.getElementById("f-prep").checked;
+  const cleanup = document.getElementById("f-cleanup").checked;
+  const sizes = readSizes();
+  const feeRaw = document.getElementById("f-fee").value;
+  const towels = readTowels();
+  const memo = document.getElementById("f-memo").value.trim();
+  const sizeStr = WASHER_SIZES.filter(s=>Number(sizes[s]||0)>0).map(s=>`${esc(s)}×${sizes[s]}`).join("・") || "なし";
+  const tTot = TOWEL_TYPES.reduce((s,t)=> s + Number(towels[t]||0), 0);
+  const towelStr = TOWEL_TYPES.filter(t=>Number(towels[t]||0)>0).map(t=>`${esc(towelShort(t))} ${towels[t]}枚`).join("・") || "なし";
+  const work = [prep?"準備":"", cleanup?"片付け":""].filter(Boolean).join("・") || "なし";
+  const rows = [
+    ["日付", esc(formatDateJp(date))],
+    ["担当者", esc(staff)],
+    ["確認者", confirmer ? esc(confirmer) : "—"],
+    ["準備・片付け", work],
+    ["洗濯機", sizeStr],
+    ["乾燥機代", feeRaw==="" ? "—" : "¥"+yen(Math.max(0,Math.round(Number(feeRaw))||0))],
+    ["タオル", towelStr + (tTot? `（計 ${tTot}枚）` : "")],
+    ["メモ", memo ? esc(memo) : "—"]
+  ];
+  return rows.map(([k,v])=>`<div class="cs-row"><span class="cs-k">${k}</span><span class="cs-v">${v}</span></div>`).join("");
+}
+function showConfirmModal(){
+  document.getElementById("confirmSummary").innerHTML = buildConfirmSummary();
+  document.getElementById("confirmModal").classList.add("show");
+}
+function closeConfirmModal(){ document.getElementById("confirmModal").classList.remove("show"); }
+document.getElementById("confirmEdit").addEventListener("click", closeConfirmModal);
+document.getElementById("confirmModal").addEventListener("click", e => { if(e.target.id === "confirmModal") closeConfirmModal(); });
+document.getElementById("confirmOk").addEventListener("click", () => { closeConfirmModal(); doSaveReport(); });
+// 実際の保存（確認画面で「報告する」を押したとき）
+function doSaveReport(){
+  const date  = document.getElementById("f-date").value;
+  const staff = document.getElementById("f-staff").value.trim();
+  const confirmer = document.getElementById("f-confirmer").value.trim();
+  const prep = document.getElementById("f-prep").checked;
+  const cleanup = document.getElementById("f-cleanup").checked;
+  const sizes = readSizes();
+  const feeRaw = document.getElementById("f-fee").value;
+  const towels = readTowels();
+  const memo  = document.getElementById("f-memo").value.trim();
   const fee = Math.max(0, Math.round(Number(feeRaw)) || 0);
 
   const records = loadRecords();
@@ -812,7 +877,7 @@ document.getElementById("recForm").addEventListener("submit", function(e){
   }
   refreshStaffList();
   refreshConfirmerList();
-});
+}
 
 document.getElementById("cancelEdit").addEventListener("click", () => {
   resetForm();
@@ -905,6 +970,8 @@ function listRowHtml(r){
     <td class="l">${esc(r.confirmer||"")}</td>
     ${workCell(r)}
     ${WASHER_SIZES.map(s => { const n=Number(sz[s]||0); return `<td class="${n?"":"zero"}">${n||"–"}</td>`; }).join("")}
+    <td class="amt">¥${yen(washerCost(r))}</td>
+    <td class="amt">¥${yen(Number(r.fee||0))}</td>
     ${TOWEL_TYPES.map(t => { const v=(r.towels&&r.towels[t])||0; return `<td class="${v?"":"zero"}">${v||"–"}</td>`; }).join("")}
     <td class="amt">${yen(tw)}</td>
     <td class="amt">¥${yen(fee)}</td>
@@ -916,13 +983,14 @@ function listRowHtml(r){
     </td>
   </tr>`;
 }
-// 合計・小計の行（タオル枚数 ＋ 外注費）
+// 合計・小計の行（日付順：洗濯機代・乾燥機代 ＋ タオル ＋ 外注費・金額）
 function listTotalRow(label, list, cls){
-  let tw=0, fee=0, pay=0; const tt={};
-  list.forEach(r => { const t=towelTotal(r); tw+=t; fee+=outsourceFee(t); pay+=recPay(r);
+  let wash=0, dry=0, tw=0, fee=0, pay=0; const tt={};
+  list.forEach(r => { wash+=washerCost(r); dry+=Number(r.fee||0); const t=towelTotal(r); tw+=t; fee+=outsourceFee(t); pay+=recPay(r);
     TOWEL_TYPES.forEach(k => { tt[k]=(tt[k]||0)+((r.towels&&r.towels[k])||0); }); });
   return `<tr class="${cls}">
     <td class="l" colspan="${4 + WASHER_SIZES.length}">${esc(label)}</td>
+    <td>¥${yen(wash)}</td><td>¥${yen(dry)}</td>
     ${TOWEL_TYPES.map(k => `<td>${yen(tt[k]||0)}</td>`).join("")}
     <td>${yen(tw)}</td><td>¥${yen(fee)}</td><td class="sum">¥${yen(pay)}</td><td></td><td></td>
   </tr>`;
@@ -985,6 +1053,7 @@ function renderList(){
     head = `<tr>
       <th class="l">日付</th><th class="l">担当</th><th class="l">確認</th><th>作業</th>
       ${WASHER_SIZES.map(s => `<th>${esc(s)}</th>`).join("")}
+      <th>洗濯機代</th><th>乾燥機代</th>
       ${TOWEL_TYPES.map(t => `<th>${esc(towelShort(t))}</th>`).join("")}
       <th>計</th><th>外注費</th><th>金額</th><th class="l">メモ</th><th>操作</th>
     </tr>`;
@@ -1279,20 +1348,19 @@ function buildDateListPdf(){
   const list = records.slice().sort((a,b)=> a.date < b.date ? -1 : 1);   // 古い順
   const months = [...new Set(list.map(r => normIsoDate(r.date).slice(0,7)))].sort();
   const span = months.length ? (months.length === 1 ? formatMonthJp(months[0]) : formatMonthJp(months[0]) + "〜" + formatMonthJp(months[months.length-1])) : "";
-  const cols = `<colgroup><col style="width:9%"><col style="width:7%"><col style="width:6%"><col style="width:6%"><col style="width:3%"><col style="width:3%"><col style="width:3%"><col style="width:5%"><col style="width:5%"><col style="width:5%"><col style="width:5%"><col style="width:9%"><col style="width:9%"><col style="width:25%"></colgroup>`;
-  const head = `<thead><tr><th>日付</th><th>担当</th><th>確認</th><th>作業</th>${WASHER_SIZES.map(s=>`<th>${esc(s)}</th>`).join("")}${TOWEL_TYPES.map(t=>`<th>${esc(towelShort(t))}</th>`).join("")}<th>計</th><th>外注費</th><th>金額</th><th>メモ</th></tr></thead>`;
-  let tTw=0, tFee=0, tPay=0; const tt={}, sc={};
+  const cols = `<colgroup><col style="width:7%"><col style="width:6%"><col style="width:5%"><col style="width:4%"><col style="width:3%"><col style="width:3%"><col style="width:3%"><col style="width:7%"><col style="width:7%"><col style="width:4%"><col style="width:4%"><col style="width:4%"><col style="width:4%"><col style="width:7%"><col style="width:7%"><col style="width:25%"></colgroup>`;
+  const head = `<thead><tr><th>日付</th><th>担当</th><th>確認</th><th>作業</th>${WASHER_SIZES.map(s=>`<th>${esc(s)}</th>`).join("")}<th>洗濯機代</th><th>乾燥機代</th>${TOWEL_TYPES.map(t=>`<th>${esc(towelShort(t))}</th>`).join("")}<th>計</th><th>外注費</th><th>金額</th><th>メモ</th></tr></thead>`;
+  let tWash=0, tDry=0, tTw=0, tFee=0, tPay=0; const tt={};
   const rows = list.map(r => {
-    const sz = recSizes(r), tw = towelTotal(r), fee = outsourceFee(tw), pay = recPay(r);
-    tTw+=tw; tFee+=fee; tPay+=pay;
+    const sz = recSizes(r), wc = washerCost(r), dry = Number(r.fee||0), tw = towelTotal(r), fee = outsourceFee(tw), pay = recPay(r);
+    tWash+=wc; tDry+=dry; tTw+=tw; tFee+=fee; tPay+=pay;
     TOWEL_TYPES.forEach(t => { tt[t]=(tt[t]||0)+((r.towels&&r.towels[t])||0); });
-    WASHER_SIZES.forEach(s => { sc[s]=(sc[s]||0)+Number(sz[s]||0); });
     const p = normIsoDate(r.date).split("-").map(Number);
     const dt = p[1]+"/"+p[2]+"("+WEEK[new Date(p[0],p[1]-1,p[2]).getDay()]+")";
     const work = [prepDone(r)?"準":"", r.cleanup===true?"片":""].filter(Boolean).join("・") || "—";
-    return `<tr><td class="l">${esc(dt)}</td><td class="l">${esc(r.staff||"")}</td><td class="l">${esc(r.confirmer||"")}</td><td>${esc(work)}</td>${WASHER_SIZES.map(s=>`<td>${yen(sz[s]||0)}</td>`).join("")}${TOWEL_TYPES.map(t=>`<td>${yen((r.towels&&r.towels[t])||0)}</td>`).join("")}<td>${yen(tw)}</td><td>¥${yen(fee)}</td><td>¥${yen(pay)}</td><td class="memo">${esc(r.memo||"")}</td></tr>`;
+    return `<tr><td class="l">${esc(dt)}</td><td class="l">${esc(r.staff||"")}</td><td class="l">${esc(r.confirmer||"")}</td><td>${esc(work)}</td>${WASHER_SIZES.map(s=>`<td>${yen(sz[s]||0)}</td>`).join("")}<td>¥${yen(wc)}</td><td>¥${yen(dry)}</td>${TOWEL_TYPES.map(t=>`<td>${yen((r.towels&&r.towels[t])||0)}</td>`).join("")}<td>${yen(tw)}</td><td>¥${yen(fee)}</td><td>¥${yen(pay)}</td><td class="memo">${esc(r.memo||"")}</td></tr>`;
   }).join("");
-  const tot = `<tr class="tot"><td class="l" colspan="${4 + WASHER_SIZES.length}">合計（${list.length}件）</td>${TOWEL_TYPES.map(t=>`<td>${yen(tt[t]||0)}</td>`).join("")}<td>${yen(tTw)}</td><td>¥${yen(tFee)}</td><td>¥${yen(tPay)}</td><td></td></tr>`;
+  const tot = `<tr class="tot"><td class="l" colspan="${4 + WASHER_SIZES.length}">合計（${list.length}件）</td><td>¥${yen(tWash)}</td><td>¥${yen(tDry)}</td>${TOWEL_TYPES.map(t=>`<td>${yen(tt[t]||0)}</td>`).join("")}<td>${yen(tTw)}</td><td>¥${yen(tFee)}</td><td>¥${yen(tPay)}</td><td></td></tr>`;
   return `<div class="lst-sheet">
     <div class="pr-title">記録一覧（日付順）</div>
     <div class="pr-meta">${esc(STATEMENT_TITLE)}　／　発行日：${esc(issueDate)}　／　対象：${esc(span)}　／　${list.length}件</div>
