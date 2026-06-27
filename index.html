@@ -919,6 +919,25 @@ function listTotalRow(label, list, cls){
     <td>${yen(tw)}</td><td>¥${yen(fee)}</td><td class="sum">¥${yen(pay)}</td><td></td><td></td>
   </tr>`;
 }
+// 担当者別（コンパクト）：日付 / 作業 / 計 / 外注費 / 金額（横スクロール不要で画面に収まる）
+function listRowCompact(r){
+  const tw = towelTotal(r);
+  return `<tr>
+    <td class="l">${esc(formatDateJp(r.date))}</td>
+    ${workCell(r)}
+    <td class="amt">${yen(tw)}</td>
+    <td class="amt">¥${yen(outsourceFee(tw))}</td>
+    <td class="sum">¥${yen(recPay(r))}</td>
+  </tr>`;
+}
+function listTotalCompact(label, list, cls){
+  let tw=0, fee=0, pay=0;
+  list.forEach(r => { const t=towelTotal(r); tw+=t; fee+=outsourceFee(t); pay+=recPay(r); });
+  return `<tr class="${cls}">
+    <td class="l" colspan="2">${esc(label)}</td>
+    <td>${yen(tw)}</td><td>¥${yen(fee)}</td><td class="sum">¥${yen(pay)}</td>
+  </tr>`;
+}
 function renderList(){
   const all = loadRecords();
   const area = document.getElementById("listArea");
@@ -930,32 +949,33 @@ function renderList(){
       <p>「📝 報告」から最初の1件を入力してみましょう。</p></div>`;
     return;
   }
-  const head = `<tr>
-    <th class="l">日付</th><th class="l">担当</th><th class="l">確認</th><th>作業</th>
-    ${WASHER_SIZES.map(s => `<th>${esc(s)}</th>`).join("")}
-    ${TOWEL_TYPES.map(t => `<th>${esc(towelShort(t))}</th>`).join("")}
-    <th>計</th><th>外注費</th><th>金額</th><th class="l">メモ</th><th>操作</th>
-  </tr>`;
-
-  let body;
+  let head, body;
   if(listMode === "staff"){
+    // 担当者別：支払い重視のコンパクト表（横スクロールせず画面に収まる）。詳細・編集は「日付順」で。
+    head = `<tr><th class="l">日付</th><th>作業</th><th>計</th><th>外注費</th><th>金額</th></tr>`;
+    const cc = 5;
     const byStaff = {};
     all.forEach(r => { const k=r.staff||"（担当者なし）"; (byStaff[k]=byStaff[k]||[]).push(r); });
-    const order = staffOrder(Object.keys(byStaff));
-    const cc = listColCount();
     let gFee=0, gPrep=0, gClean=0;
-    body = order.map(staff => {
+    body = staffOrder(Object.keys(byStaff)).map(staff => {
       const list = byStaff[staff].slice().sort(sortByDateAsc);
       const sd = staffDayGroups(list);
       const pf = sd.reduce((s,g)=> s + g.fee, 0), pp = sd.reduce((s,g)=> s + g.prep, 0), pc = sd.reduce((s,g)=> s + g.cleanup, 0);
       gFee+=pf; gPrep+=pp; gClean+=pc;
       const grp = `<tr class="grp"><td class="l" colspan="${cc}">👤 ${esc(staff)}　<span class="grp-n">${list.length}件</span></td></tr>`;
       const pay = `<tr class="pay"><td class="l" colspan="${cc}">💰 ${esc(staff)} お支払い：外注費 ¥${yen(pf)} ＋ 準備 ¥${yen(pp)} ＋ 片付け ¥${yen(pc)} ＝ <b>¥${yen(pf+pp+pc)}</b></td></tr>`;
-      return grp + list.map(listRowHtml).join("") + listTotalRow(`${staff} 小計`, list, "sub") + pay;
+      return grp + list.map(listRowCompact).join("") + listTotalCompact(`${staff} 小計`, list, "sub") + pay;
     }).join("");
-    body += listTotalRow(`全体合計（${all.length}件）`, all, "foot");
+    body += listTotalCompact(`全体合計（${all.length}件）`, all, "foot");
     body += `<tr class="pay grand"><td class="l" colspan="${cc}">💰 お支払い総額：外注費 ¥${yen(gFee)} ＋ 準備 ¥${yen(gPrep)} ＋ 片付け ¥${yen(gClean)} ＝ <b>¥${yen(gFee+gPrep+gClean)}</b></td></tr>`;
   } else {
+    // 日付順：全項目の詳細表
+    head = `<tr>
+      <th class="l">日付</th><th class="l">担当</th><th class="l">確認</th><th>作業</th>
+      ${WASHER_SIZES.map(s => `<th>${esc(s)}</th>`).join("")}
+      ${TOWEL_TYPES.map(t => `<th>${esc(towelShort(t))}</th>`).join("")}
+      <th>計</th><th>外注費</th><th>金額</th><th class="l">メモ</th><th>操作</th>
+    </tr>`;
     const list = all.slice().sort(sortByDateAsc);
     body = list.map(listRowHtml).join("") + listTotalRow(`合計（${all.length}件）`, all, "foot");
   }
