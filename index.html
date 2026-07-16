@@ -315,6 +315,11 @@
   .confirm-sum .cs-row:last-child{border-bottom:none;}
   .confirm-sum .cs-k{color:var(--muted);font-weight:700;flex:0 0 auto;}
   .confirm-sum .cs-v{color:#0f172a;font-weight:700;text-align:right;word-break:break-word;}
+  /* 月選択 */
+  .month-list{display:flex;flex-direction:column;gap:8px;margin:10px 0 2px;max-height:50vh;overflow:auto;}
+  .month-btn{font-family:inherit;font-size:16px;font-weight:800;color:var(--primary-dark);background:#f0fdfa;border:1.5px solid #ccfbf1;border-radius:10px;padding:13px;cursor:pointer;}
+  .month-btn:active{background:#ccfbf1;}
+  .month-btn.all{color:#334155;background:#f8fafc;border-color:var(--border);}
 
   /* 外注費 明細表（印刷用） */
   #printArea{display:none;color:#000;}
@@ -344,7 +349,7 @@
   @media print{
     @page{margin:14mm;}
     html,body{background:#fff !important;}
-    .wrap, #pwModal, #confirmModal, #toast{display:none !important;}
+    .wrap, #pwModal, #confirmModal, #monthModal, #toast{display:none !important;}
     #printArea{display:block !important;}
   }
 </style>
@@ -508,6 +513,18 @@
     <div class="modal-btns">
       <button type="button" class="btn btn-ghost" id="confirmEdit">✏️ 修正する</button>
       <button type="button" class="btn btn-primary" id="confirmOk">✅ 報告する</button>
+    </div>
+  </div>
+</div>
+
+<!-- 何月分を印刷するか選ぶ -->
+<div class="modal-overlay" id="monthModal">
+  <div class="modal">
+    <div class="modal-ico">🖨️</div>
+    <h3>何月分を印刷しますか？</h3>
+    <div class="month-list" id="monthList"></div>
+    <div class="modal-btns">
+      <button type="button" class="btn btn-ghost" id="monthCancel">キャンセル</button>
     </div>
   </div>
 </div>
@@ -1340,10 +1357,11 @@ document.getElementById("listPdfBtn").addEventListener("click", () => {
   document.getElementById("printArea").innerHTML = buildListPdf();
   window.print();
 });
-// 記録一覧（日付順）を1つの表として印刷
-function buildDateListPdf(){
-  const records = loadRecords();
-  if(!records.length) return `<div class="lst-sheet"><div class="pr-title">記録一覧（日付順）</div><p>データがありません。</p></div>`;
+// 記録一覧（日付順）を1つの表として印刷（ym="YYYY-MM" を渡すとその月だけ）
+function buildDateListPdf(ym){
+  let records = loadRecords();
+  if(ym) records = records.filter(r => normIsoDate(r.date).slice(0,7) === ym);
+  if(!records.length) return `<div class="lst-sheet"><div class="pr-title">記録一覧</div><p>この月のデータがありません。</p></div>`;
   const issueDate = formatDateJp(todayStr());
   const list = records.slice().sort((a,b)=> a.date < b.date ? -1 : 1);   // 古い順
   const months = [...new Set(list.map(r => normIsoDate(r.date).slice(0,7)))].sort();
@@ -1361,17 +1379,31 @@ function buildDateListPdf(){
     return `<tr><td class="l">${esc(dt)}</td><td class="l">${esc(r.staff||"")}</td><td class="l">${esc(r.confirmer||"")}</td><td>${esc(work)}</td>${WASHER_SIZES.map(s=>`<td>${yen(sz[s]||0)}</td>`).join("")}<td>¥${yen(wc)}</td><td>¥${yen(dry)}</td>${TOWEL_TYPES.map(t=>`<td>${yen((r.towels&&r.towels[t])||0)}</td>`).join("")}<td>${yen(tw)}</td><td>¥${yen(fee)}</td><td>¥${yen(pay)}</td><td class="memo">${esc(r.memo||"")}</td></tr>`;
   }).join("");
   const tot = `<tr class="tot"><td class="l" colspan="${4 + WASHER_SIZES.length}">合計（${list.length}件）</td><td>¥${yen(tWash)}</td><td>¥${yen(tDry)}</td>${TOWEL_TYPES.map(t=>`<td>${yen(tt[t]||0)}</td>`).join("")}<td>${yen(tTw)}</td><td>¥${yen(tFee)}</td><td>¥${yen(tPay)}</td><td></td></tr>`;
+  const title = ym ? `記録一覧（${esc(formatMonthJp(ym))}）` : "記録一覧（日付順）";
   return `<div class="lst-sheet">
-    <div class="pr-title">記録一覧（日付順）</div>
+    <div class="pr-title">${title}</div>
     <div class="pr-meta">${esc(STATEMENT_TITLE)}　／　発行日：${esc(issueDate)}　／　対象：${esc(span)}　／　${list.length}件</div>
     <table class="lst-tbl">${cols}${head}<tbody>${rows}${tot}</tbody></table>
   </div>`;
 }
-document.getElementById("dateListPdfBtn").addEventListener("click", () => {
-  if(!loadRecords().length){ toast("印刷するデータがありません", true); return; }
-  document.getElementById("printArea").innerHTML = buildDateListPdf();
-  window.print();
-});
+// 「記録一覧を印刷（日付順）」→ 何月分か選んでから印刷
+function openMonthModal(){
+  const records = loadRecords();
+  if(!records.length){ toast("印刷するデータがありません", true); return; }
+  const months = [...new Set(records.map(r => normIsoDate(r.date).slice(0,7)))].filter(Boolean).sort().reverse();
+  const listEl = document.getElementById("monthList");
+  listEl.innerHTML = months.map(ym => `<button type="button" class="month-btn" data-ym="${esc(ym)}">${esc(formatMonthJp(ym))}</button>`).join("")
+    + `<button type="button" class="month-btn all" data-ym="">すべての月</button>`;
+  listEl.querySelectorAll(".month-btn").forEach(b => b.addEventListener("click", () => {
+    document.getElementById("monthModal").classList.remove("show");
+    document.getElementById("printArea").innerHTML = buildDateListPdf(b.dataset.ym || null);
+    window.print();
+  }));
+  document.getElementById("monthModal").classList.add("show");
+}
+document.getElementById("dateListPdfBtn").addEventListener("click", openMonthModal);
+document.getElementById("monthCancel").addEventListener("click", () => document.getElementById("monthModal").classList.remove("show"));
+document.getElementById("monthModal").addEventListener("click", e => { if(e.target.id === "monthModal") document.getElementById("monthModal").classList.remove("show"); });
 
 // データ取り込み（JSONファイル）：同じidは重複させず追加
 document.getElementById("refreshBtn").addEventListener("click", () => cloudPull(ok => { renderList(); toast(ok ? "🔄 最新に更新しました" : "更新できませんでした（オフライン？）", !ok); }));
