@@ -184,6 +184,13 @@
   .btn-del{background:#fff;color:var(--danger);border:1.5px solid #fecaca;}
 
   /* ====== 記録一覧（テーブル） ====== */
+  /* 期間の絞り込み */
+  .range-row{display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap;}
+  .range-lbl{font-size:12px;font-weight:800;color:var(--muted);flex:0 0 auto;}
+  .range-date{width:auto;font-size:14px;padding:7px 8px;flex:1 1 130px;min-width:0;}
+  .range-sep{color:var(--muted);flex:0 0 auto;}
+  .range-clear{font-family:inherit;font-size:12px;font-weight:700;color:#334155;background:#f1f5f9;border:1px solid var(--border);border-radius:8px;padding:7px 10px;cursor:pointer;flex:0 0 auto;}
+  .range-clear:active{background:#e2e8f0;}
   .list-wrap{overflow:auto;-webkit-overflow-scrolling:touch;max-height:calc(100vh - 350px);min-height:200px;border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);background:var(--card);}
   /* 横スクロールバーを太く・つかみやすく */
   .list-wrap::-webkit-scrollbar{height:15px;width:12px;}
@@ -440,6 +447,13 @@
       <div class="seg" id="listSeg">
         <button type="button" class="seg-btn active" data-lmode="date">📅 日付順</button>
         <button type="button" class="seg-btn" data-lmode="staff">👤 担当者別</button>
+      </div>
+      <div class="range-row">
+        <span class="range-lbl">期間</span>
+        <input type="date" id="listFrom" class="range-date" aria-label="開始日">
+        <span class="range-sep">〜</span>
+        <input type="date" id="listTo" class="range-date" aria-label="終了日">
+        <button type="button" class="range-clear" id="rangeClear">クリア</button>
       </div>
       <div style="margin-bottom:6px;display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-csv btn-sm" id="refreshBtn">🔄 最新に更新</button>
@@ -1036,14 +1050,27 @@ function listTotalCompact(label, list, cls){
   </tr>`;
 }
 function renderList(){
-  const all = loadRecords();
   const area = document.getElementById("listArea");
-  document.getElementById("listCount").textContent = all.length ? `全 ${all.length} 件` : "";
+  const total = loadRecords();
+  // 期間（いつから〜いつまで）で絞り込み
+  const from = document.getElementById("listFrom").value;
+  const to = document.getElementById("listTo").value;
+  let all = total;
+  if(from) all = all.filter(r => normIsoDate(r.date) >= from);
+  if(to) all = all.filter(r => normIsoDate(r.date) <= to);
+  const filtered = !!(from || to);
+  document.getElementById("listCount").textContent = total.length ? (filtered ? `${all.length}件 / 全${total.length}件` : `全 ${total.length} 件`) : "";
 
-  if(!all.length){
+  if(!total.length){
     area.innerHTML = `<div class="empty"><div class="ico">🧺</div>
       <p>まだ記録がありません</p>
       <p>「📝 報告」から最初の1件を入力してみましょう。</p></div>`;
+    return;
+  }
+  if(!all.length){
+    area.innerHTML = `<div class="empty"><div class="ico">🔍</div>
+      <p>この期間の記録はありません</p>
+      <p>期間を変えるか「クリア」を押してください。</p></div>`;
     return;
   }
   let head, body;
@@ -1272,6 +1299,14 @@ document.querySelectorAll("#listSeg .seg-btn").forEach(b => b.addEventListener("
   document.querySelectorAll("#listSeg .seg-btn").forEach(x => x.classList.toggle("active", x === b));
   renderList();
 }));
+// 期間の絞り込み
+document.getElementById("listFrom").addEventListener("change", renderList);
+document.getElementById("listTo").addEventListener("change", renderList);
+document.getElementById("rangeClear").addEventListener("click", () => {
+  document.getElementById("listFrom").value = "";
+  document.getElementById("listTo").value = "";
+  renderList();
+});
 
 // 外注費 明細表（印刷用）を組み立てる：月ごと → 担当者ごとに日別明細＋小計、月合計
 function buildPrintStatement(){
