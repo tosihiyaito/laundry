@@ -1313,9 +1313,10 @@ document.getElementById("printBtn").addEventListener("click", () => {
 });
 
 // 記録一覧（月ごと・A4 1枚）をPDF/印刷用に組み立てる
-function buildListPdf(){
-  const records = loadRecords();
-  if(!records.length) return `<div class="pr-sheet"><div class="pr-title">${esc(STATEMENT_TITLE)}</div><p>データがありません。</p></div>`;
+function buildListPdf(ym){
+  let records = loadRecords();
+  if(ym) records = records.filter(r => normIsoDate(r.date).slice(0,7) === ym);
+  if(!records.length) return `<div class="pr-sheet"><div class="pr-title">${esc(STATEMENT_TITLE)}</div><p>この月のデータがありません。</p></div>`;
   const issueDate = formatDateJp(todayStr());
   // 担当者ごとに1人1ページの支払明細
   const byStaff = {};
@@ -1352,11 +1353,7 @@ function buildListPdf(){
   });
   return sheets.join("");
 }
-document.getElementById("listPdfBtn").addEventListener("click", () => {
-  if(!loadRecords().length){ toast("PDFにするデータがありません", true); return; }
-  document.getElementById("printArea").innerHTML = buildListPdf();
-  window.print();
-});
+document.getElementById("listPdfBtn").addEventListener("click", () => openMonthModal(buildListPdf));
 // 記録一覧（日付順）を1つの表として印刷（ym="YYYY-MM" を渡すとその月だけ）
 function buildDateListPdf(ym){
   let records = loadRecords();
@@ -1386,8 +1383,8 @@ function buildDateListPdf(ym){
     <table class="lst-tbl">${cols}${head}<tbody>${rows}${tot}</tbody></table>
   </div>`;
 }
-// 「記録一覧を印刷（日付順）」→ 何月分か選んでから印刷
-function openMonthModal(){
+// 印刷ボタン共通：何月分か選んでから、渡された組み立て関数で印刷
+function openMonthModal(builderFn){
   const records = loadRecords();
   if(!records.length){ toast("印刷するデータがありません", true); return; }
   const months = [...new Set(records.map(r => normIsoDate(r.date).slice(0,7)))].filter(Boolean).sort().reverse();
@@ -1396,12 +1393,12 @@ function openMonthModal(){
     + `<button type="button" class="month-btn all" data-ym="">すべての月</button>`;
   listEl.querySelectorAll(".month-btn").forEach(b => b.addEventListener("click", () => {
     document.getElementById("monthModal").classList.remove("show");
-    document.getElementById("printArea").innerHTML = buildDateListPdf(b.dataset.ym || null);
+    document.getElementById("printArea").innerHTML = builderFn(b.dataset.ym || null);
     window.print();
   }));
   document.getElementById("monthModal").classList.add("show");
 }
-document.getElementById("dateListPdfBtn").addEventListener("click", openMonthModal);
+document.getElementById("dateListPdfBtn").addEventListener("click", () => openMonthModal(buildDateListPdf));
 document.getElementById("monthCancel").addEventListener("click", () => document.getElementById("monthModal").classList.remove("show"));
 document.getElementById("monthModal").addEventListener("click", e => { if(e.target.id === "monthModal") document.getElementById("monthModal").classList.remove("show"); });
 
