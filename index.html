@@ -327,6 +327,15 @@
   .month-btn{font-family:inherit;font-size:16px;font-weight:800;color:var(--primary-dark);background:#f0fdfa;border:1.5px solid #ccfbf1;border-radius:10px;padding:13px;cursor:pointer;}
   .month-btn:active{background:#ccfbf1;}
   .month-btn.all{color:#334155;background:#f8fafc;border-color:var(--border);}
+  /* 担当者の管理 */
+  .staff-mgr{text-align:left;margin:8px 0 10px;max-height:40vh;overflow:auto;}
+  .staff-mgr .sm-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 4px;border-bottom:1px solid var(--border);}
+  .staff-mgr .sm-row:last-child{border-bottom:none;}
+  .staff-mgr .sm-name{font-size:15px;font-weight:700;color:#0f172a;}
+  .staff-mgr .sm-name small{display:block;font-size:11px;font-weight:600;color:var(--muted);margin-top:1px;}
+  .staff-add{display:flex;gap:8px;align-items:center;}
+  .staff-add input{flex:1 1 auto;min-width:0;font-size:16px;text-align:left;letter-spacing:normal;}
+  .staff-add .btn{flex:0 0 auto;width:auto;padding:10px 16px;}
 
   /* 外注費 明細表（印刷用） */
   #printArea{display:none;color:#000;}
@@ -356,7 +365,7 @@
   @media print{
     @page{margin:10mm;}
     html,body{background:#fff !important;}
-    .wrap, #pwModal, #confirmModal, #monthModal, #toast{display:none !important;}
+    .wrap, #pwModal, #confirmModal, #monthModal, #staffModal, #toast{display:none !important;}
     #printArea{display:block !important;}
   }
 </style>
@@ -461,6 +470,7 @@
         <button class="btn btn-csv btn-sm" id="listPdfBtn">🖨️ 支払明細をPDF（1人1枚）</button>
         <button class="btn btn-csv btn-sm" id="dateListPdfBtn">🖨️ 記録一覧を印刷（日付順）</button>
         <button class="btn btn-csv btn-sm" id="importBtn">📥 データ取り込み</button>
+        <button class="btn btn-csv btn-sm" id="staffMgrBtn">👥 担当者の管理</button>
         <input type="file" id="importFile" accept=".json,application/json" style="display:none">
       </div>
       <div id="syncStatus" style="margin-bottom:12px;font-size:12px;color:var(--muted);">☁️ クラウドと同期</div>
@@ -543,6 +553,24 @@
   </div>
 </div>
 
+<!-- 担当者の追加・削除 -->
+<div class="modal-overlay" id="staffModal">
+  <div class="modal">
+    <div class="modal-ico">👥</div>
+    <h3>担当者の管理</h3>
+    <p>報告のときに選べる名前です</p>
+    <div class="staff-mgr" id="staffMgrList"></div>
+    <div class="staff-add">
+      <input type="text" id="staffNewName" placeholder="新しい担当者の名前" autocomplete="off">
+      <button type="button" class="btn btn-primary" id="staffAddBtn">追加</button>
+    </div>
+    <div class="modal-err" id="staffErr"></div>
+    <div class="modal-btns">
+      <button type="button" class="btn btn-ghost" id="staffClose">閉じる</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <!-- 印刷用：外注費 明細表（画面では非表示、印刷時のみ表示） -->
@@ -585,7 +613,10 @@ const WEEK = ["日","月","火","水","木","金","土"];
 /* ---------- データ保存・読込（端末内：localStorage） ---------- */
 // 開発中に誤って混入したテスト記録(a1,a2,b1,t1〜t4)を除外（id が短いこの形だけ。本物のidは長いので影響なし）
 function isJunkId(id){ return /^(a\d|b\d|t[1-4])$/.test(String(id||"")); }
-function loadRecords(){
+// 担当者リストなどの設定は、記録と同じ仕組みで全端末に共有するため「特別な1行」として保存する
+const SETTINGS_ID = "__settings__";
+function isSettingsRow(r){ return !!r && r.id === SETTINGS_ID; }
+function loadAll(){          // 設定行を含む生データ（クラウドへ送るのはこれ）
   try{
     const arr = JSON.parse(localStorage.getItem(STORE_KEY)) || [];
     // クラウド経由で日付がDate文字列化していても表示・集計が壊れないよう読み取り時に正規化
@@ -594,16 +625,37 @@ function loadRecords(){
   }
   catch(e){ return []; }
 }
-function saveRecords(arr){
+function loadRecords(){      // 表示・集計に使う記録だけ（設定行は除く）
+  return loadAll().filter(r => !isSettingsRow(r));
+}
+function writeAll(arr){
   localStorage.setItem(STORE_KEY, JSON.stringify(arr));
   cloudPush();
+}
+function saveRecords(arr){   // 記録を保存（設定行はそのまま残す）
+  const settings = loadAll().filter(isSettingsRow);
+  writeAll(arr.filter(r => !isSettingsRow(r)).concat(settings));
+}
+/* 担当者リスト：画面から追加・削除でき、クラウド経由で他の端末にも反映される */
+function getStaffList(){
+  const st = loadAll().filter(isSettingsRow)[0];
+  if(st && st.memo){
+    try{ const o = JSON.parse(st.memo); if(o && Array.isArray(o.staff)) return o.staff.slice(); }catch(e){}
+  }
+  return STAFF.slice();      // まだ設定がなければ、最初の設定（STAFF）を使う
+}
+function setStaffList(list){
+  const rest = loadAll().filter(r => !isSettingsRow(r));
+  rest.push({ id:SETTINGS_ID, date:"", staff:"", confirmer:"", prep:false, cleanup:false,
+    sizes:{}, fee:0, towels:{}, memo:JSON.stringify({staff:list}), createdAt:new Date().toISOString() });
+  writeAll(rest);
 }
 /* ---------- クラウド同期（Googleスプレッドシート） ---------- */
 function setSyncStatus(txt){ const el = document.getElementById("syncStatus"); if(el) el.textContent = txt; }
 function cloudPush(){
   if(!SYNC_URL) return;
   setSyncStatus("☁️ 保存中…");
-  fetch(SYNC_URL, {method:"POST", mode:"no-cors", headers:{"Content-Type":"text/plain;charset=utf-8"}, body: JSON.stringify({records: loadRecords()})})
+  fetch(SYNC_URL, {method:"POST", mode:"no-cors", headers:{"Content-Type":"text/plain;charset=utf-8"}, body: JSON.stringify({records: loadAll()})})
     .then(()=> setSyncStatus("☁️ 同期済み"))
     .catch(()=> setSyncStatus("⚠️ オフライン（保存待ち）"));
 }
@@ -617,7 +669,7 @@ function cloudPull(done){
   window[cbName] = function(data){
     try{
       if(data && data.ok && Array.isArray(data.records)){
-        const local = loadRecords();
+        const local = loadAll();
         const byId = {}, cloudIds = {};
         let hadJunk = false;
         local.forEach(r => { if(r && r.id) byId[r.id] = r; });
@@ -739,7 +791,7 @@ function refreshStaffList(){
   const sel = document.getElementById("f-staff");
   const cur = sel.value;
   sel.innerHTML = '<option value="">選択してください</option>' +
-    STAFF.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join("");
+    getStaffList().map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join("");
   if(cur) sel.value = cur;
 }
 function refreshConfirmerList(){
@@ -1124,7 +1176,7 @@ function groupByMonth(records){
 }
 function staffOrder(names){
   const out = [];
-  STAFF.forEach(s => { if(names.indexOf(s) >= 0) out.push(s); });
+  getStaffList().forEach(s => { if(names.indexOf(s) >= 0) out.push(s); });
   names.slice().sort().forEach(s => { if(out.indexOf(s) < 0) out.push(s); });
   return out;
 }
@@ -1434,6 +1486,59 @@ function openMonthModal(builderFn){
   document.getElementById("monthModal").classList.add("show");
 }
 document.getElementById("dateListPdfBtn").addEventListener("click", () => openMonthModal(buildDateListPdf));
+
+/* ---------- 担当者の管理（追加・削除） ---------- */
+function renderStaffMgr(){
+  const list = getStaffList();
+  const recs = loadRecords();
+  const el = document.getElementById("staffMgrList");
+  el.innerHTML = list.length ? list.map(n => {
+    const cnt = recs.filter(r => r.staff === n).length;
+    return `<div class="sm-row">
+      <span class="sm-name">${esc(n)}<small>${cnt ? "記録 " + cnt + "件" : "記録なし"}</small></span>
+      <button type="button" class="btn-mini d" data-delstaff="${esc(n)}" title="削除">🗑️</button>
+    </div>`;
+  }).join("") : `<p style="color:var(--muted);font-size:13px;margin:6px 0;">担当者がいません。下の欄から追加してください。</p>`;
+  el.querySelectorAll("[data-delstaff]").forEach(b =>
+    b.addEventListener("click", () => delStaff(b.dataset.delstaff)));
+}
+function openStaffModal(){
+  document.getElementById("staffNewName").value = "";
+  document.getElementById("staffErr").textContent = "";
+  renderStaffMgr();
+  document.getElementById("staffModal").classList.add("show");
+}
+function closeStaffModal(){ document.getElementById("staffModal").classList.remove("show"); }
+function addStaff(){
+  const inp = document.getElementById("staffNewName");
+  const err = document.getElementById("staffErr");
+  const name = inp.value.trim();
+  if(!name){ err.textContent = "名前を入力してください"; inp.focus(); return; }
+  const list = getStaffList();
+  if(list.indexOf(name) >= 0){ err.textContent = "その名前はすでにあります"; inp.focus(); return; }
+  list.push(name);
+  setStaffList(list);
+  refreshStaffList();
+  inp.value = ""; err.textContent = "";
+  renderStaffMgr();
+  toast("✅ " + name + " さんを追加しました");
+}
+function delStaff(name){
+  const cnt = loadRecords().filter(r => r.staff === name).length;
+  const msg = cnt
+    ? name + " さんを担当者リストから外します。" + String.fromCharCode(10) + "（これまでの記録 " + cnt + "件はそのまま残ります）" + String.fromCharCode(10) + "よろしいですか？"
+    : name + " さんを担当者リストから外します。よろしいですか？";
+  if(!confirm(msg)) return;
+  setStaffList(getStaffList().filter(n => n !== name));
+  refreshStaffList();
+  renderStaffMgr();
+  toast("🗑️ " + name + " さんを外しました");
+}
+document.getElementById("staffMgrBtn").addEventListener("click", openStaffModal);
+document.getElementById("staffAddBtn").addEventListener("click", addStaff);
+document.getElementById("staffClose").addEventListener("click", closeStaffModal);
+document.getElementById("staffNewName").addEventListener("keydown", e => { if(e.key === "Enter"){ e.preventDefault(); addStaff(); } });
+document.getElementById("staffModal").addEventListener("click", e => { if(e.target.id === "staffModal") closeStaffModal(); });
 document.getElementById("monthCancel").addEventListener("click", () => document.getElementById("monthModal").classList.remove("show"));
 document.getElementById("monthModal").addEventListener("click", e => { if(e.target.id === "monthModal") document.getElementById("monthModal").classList.remove("show"); });
 
