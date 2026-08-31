@@ -470,7 +470,7 @@
         <button class="btn btn-csv btn-sm" id="listPdfBtn">🖨️ 支払明細をPDF（1人1枚）</button>
         <button class="btn btn-csv btn-sm" id="dateListPdfBtn">🖨️ 記録一覧を印刷（日付順）</button>
         <button class="btn btn-csv btn-sm" id="importBtn">📥 データ取り込み</button>
-        <button class="btn btn-csv btn-sm" id="staffMgrBtn">👥 担当者の管理</button>
+        <button class="btn btn-csv btn-sm" id="staffMgrBtn">👥 名前の管理（担当者・確認者）</button>
         <input type="file" id="importFile" accept=".json,application/json" style="display:none">
       </div>
       <div id="syncStatus" style="margin-bottom:12px;font-size:12px;color:var(--muted);">☁️ クラウドと同期</div>
@@ -557,8 +557,12 @@
 <div class="modal-overlay" id="staffModal">
   <div class="modal">
     <div class="modal-ico">👥</div>
-    <h3>担当者の管理</h3>
-    <p>報告のときに選べる名前です</p>
+    <h3>名前の管理</h3>
+    <div class="seg" id="nameSeg">
+      <button type="button" class="seg-btn active" data-nmode="staff">👤 担当者</button>
+      <button type="button" class="seg-btn" data-nmode="confirmer">✅ 確認者</button>
+    </div>
+    <p id="nameMgrHint">報告のときに選べる名前です</p>
     <div class="staff-mgr" id="staffMgrList"></div>
     <div class="staff-add">
       <input type="text" id="staffNewName" placeholder="新しい担当者の名前" autocomplete="off">
@@ -636,20 +640,37 @@ function saveRecords(arr){   // 記録を保存（設定行はそのまま残す
   const settings = loadAll().filter(isSettingsRow);
   writeAll(arr.filter(r => !isSettingsRow(r)).concat(settings));
 }
-/* 担当者リスト：画面から追加・削除でき、クラウド経由で他の端末にも反映される */
-function getStaffList(){
+/* 名前リスト（担当者・確認者）：画面から追加・削除でき、クラウド経由で他の端末にも反映される */
+function getSettings(){
   const st = loadAll().filter(isSettingsRow)[0];
   if(st && st.memo){
-    try{ const o = JSON.parse(st.memo); if(o && Array.isArray(o.staff)) return o.staff.slice(); }catch(e){}
+    try{ const o = JSON.parse(st.memo); if(o && typeof o === "object") return o; }catch(e){}
   }
-  return STAFF.slice();      // まだ設定がなければ、最初の設定（STAFF）を使う
+  return {};
 }
-function setStaffList(list){
+function saveSettings(patch){
+  const next = Object.assign({}, getSettings(), patch);
   const rest = loadAll().filter(r => !isSettingsRow(r));
   rest.push({ id:SETTINGS_ID, date:"", staff:"", confirmer:"", prep:false, cleanup:false,
-    sizes:{}, fee:0, towels:{}, memo:JSON.stringify({staff:list}), createdAt:new Date().toISOString() });
+    sizes:{}, fee:0, towels:{}, memo:JSON.stringify(next), createdAt:new Date().toISOString() });
   writeAll(rest);
 }
+function getStaffList(){
+  const o = getSettings();
+  return Array.isArray(o.staff) ? o.staff.slice() : STAFF.slice();   // 未設定なら最初の設定（STAFF）
+}
+function setStaffList(list){ saveSettings({staff:list}); }
+function getConfirmerList(){
+  const o = getSettings();
+  if(Array.isArray(o.confirmers)) return o.confirmers.slice();
+  // 未設定のときは「最初の設定＋これまでに入力された名前」をまとめて初期リストにする
+  const seen = [];
+  const add = n => { n = (n||"").trim(); if(n && seen.indexOf(n) === -1) seen.push(n); };
+  CONFIRMERS.forEach(add);
+  loadRecords().forEach(r => add(r.confirmer));
+  return seen;
+}
+function setConfirmerList(list){ saveSettings({confirmers:list}); }
 /* ---------- クラウド同期（Googleスプレッドシート） ---------- */
 function setSyncStatus(txt){ const el = document.getElementById("syncStatus"); if(el) el.textContent = txt; }
 function cloudPush(){
@@ -795,12 +816,8 @@ function refreshStaffList(){
   if(cur) sel.value = cur;
 }
 function refreshConfirmerList(){
-  const seen = [];
-  const add = n => { n = (n||"").trim(); if(n && seen.indexOf(n) === -1) seen.push(n); };
-  CONFIRMERS.forEach(add);
-  loadRecords().forEach(r => add(r.confirmer));
   document.getElementById("confirmerList").innerHTML =
-    seen.map(s => `<option value="${esc(s)}">`).join("");
+    getConfirmerList().map(s => `<option value="${esc(s)}">`).join("");
 }
 
 /* ---------- トースト通知 ---------- */
@@ -1487,20 +1504,35 @@ function openMonthModal(builderFn){
 }
 document.getElementById("dateListPdfBtn").addEventListener("click", () => openMonthModal(buildDateListPdf));
 
-/* ---------- 担当者の管理（追加・削除） ---------- */
-function renderStaffMgr(){
-  const list = getStaffList();
+/* ---------- 名前の管理（担当者・確認者の追加・削除） ---------- */
+let nameMgrMode = "staff";   // "staff"=担当者, "confirmer"=確認者
+function nameMgrLabel(){ return nameMgrMode === "staff" ? "担当者" : "確認者"; }
+function nameMgrGet(){ return nameMgrMode === "staff" ? getStaffList() : getConfirmerList(); }
+function nameMgrSet(list){
+  if(nameMgrMode === "staff"){ setStaffList(list); refreshStaffList(); }
+  else { setConfirmerList(list); refreshConfirmerList(); }
+}
+function nameMgrCount(name){
   const recs = loadRecords();
+  return nameMgrMode === "staff"
+    ? recs.filter(r => r.staff === name).length
+    : recs.filter(r => (r.confirmer||"") === name).length;
+}
+function renderStaffMgr(){
+  const list = nameMgrGet();
   const el = document.getElementById("staffMgrList");
   el.innerHTML = list.length ? list.map(n => {
-    const cnt = recs.filter(r => r.staff === n).length;
+    const cnt = nameMgrCount(n);
     return `<div class="sm-row">
       <span class="sm-name">${esc(n)}<small>${cnt ? "記録 " + cnt + "件" : "記録なし"}</small></span>
       <button type="button" class="btn-mini d" data-delstaff="${esc(n)}" title="削除">🗑️</button>
     </div>`;
-  }).join("") : `<p style="color:var(--muted);font-size:13px;margin:6px 0;">担当者がいません。下の欄から追加してください。</p>`;
+  }).join("") : `<p style="color:var(--muted);font-size:13px;margin:6px 0;">${nameMgrLabel()}がいません。下の欄から追加してください。</p>`;
   el.querySelectorAll("[data-delstaff]").forEach(b =>
     b.addEventListener("click", () => delStaff(b.dataset.delstaff)));
+  document.getElementById("staffNewName").placeholder = "新しい" + nameMgrLabel() + "の名前";
+  document.getElementById("nameMgrHint").textContent = nameMgrMode === "staff"
+    ? "報告のときに選べる名前です" : "確認者の入力欄に出てくる名前です";
 }
 function openStaffModal(){
   document.getElementById("staffNewName").value = "";
@@ -1514,26 +1546,31 @@ function addStaff(){
   const err = document.getElementById("staffErr");
   const name = inp.value.trim();
   if(!name){ err.textContent = "名前を入力してください"; inp.focus(); return; }
-  const list = getStaffList();
+  const list = nameMgrGet();
   if(list.indexOf(name) >= 0){ err.textContent = "その名前はすでにあります"; inp.focus(); return; }
   list.push(name);
-  setStaffList(list);
-  refreshStaffList();
+  nameMgrSet(list);
   inp.value = ""; err.textContent = "";
   renderStaffMgr();
   toast("✅ " + name + " さんを追加しました");
 }
 function delStaff(name){
-  const cnt = loadRecords().filter(r => r.staff === name).length;
+  const cnt = nameMgrCount(name);
   const msg = cnt
-    ? name + " さんを担当者リストから外します。" + String.fromCharCode(10) + "（これまでの記録 " + cnt + "件はそのまま残ります）" + String.fromCharCode(10) + "よろしいですか？"
-    : name + " さんを担当者リストから外します。よろしいですか？";
+    ? name + " さんを" + nameMgrLabel() + "リストから外します。" + String.fromCharCode(10) + "（これまでの記録 " + cnt + "件はそのまま残ります）" + String.fromCharCode(10) + "よろしいですか？"
+    : name + " さんを" + nameMgrLabel() + "リストから外します。よろしいですか？";
   if(!confirm(msg)) return;
-  setStaffList(getStaffList().filter(n => n !== name));
-  refreshStaffList();
+  nameMgrSet(nameMgrGet().filter(n => n !== name));
   renderStaffMgr();
   toast("🗑️ " + name + " さんを外しました");
 }
+document.querySelectorAll("#nameSeg .seg-btn").forEach(b => b.addEventListener("click", () => {
+  nameMgrMode = b.dataset.nmode;
+  document.querySelectorAll("#nameSeg .seg-btn").forEach(x => x.classList.toggle("active", x === b));
+  document.getElementById("staffNewName").value = "";
+  document.getElementById("staffErr").textContent = "";
+  renderStaffMgr();
+}));
 document.getElementById("staffMgrBtn").addEventListener("click", openStaffModal);
 document.getElementById("staffAddBtn").addEventListener("click", addStaff);
 document.getElementById("staffClose").addEventListener("click", closeStaffModal);
