@@ -333,6 +333,9 @@
   .staff-mgr .sm-row:last-child{border-bottom:none;}
   .staff-mgr .sm-name{font-size:15px;font-weight:700;color:#0f172a;}
   .staff-mgr .sm-name small{display:block;font-size:11px;font-weight:600;color:var(--muted);margin-top:1px;}
+  .staff-mgr .sm-acts{flex:0 0 auto;white-space:nowrap;}
+  .staff-mgr .sm-badge{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:999px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:10px;font-weight:800;vertical-align:middle;}
+  .staff-mgr .sm-note{margin:10px 0 2px;padding:7px 9px;border-radius:8px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:11px;font-weight:700;line-height:1.4;}
   .staff-add{display:flex;gap:8px;align-items:center;}
   .staff-add input{flex:1 1 auto;min-width:0;font-size:16px;text-align:left;letter-spacing:normal;}
   .staff-add .btn{flex:0 0 auto;width:auto;padding:10px 16px;}
@@ -1512,24 +1515,48 @@ function nameMgrSet(list){
   if(nameMgrMode === "staff"){ setStaffList(list); refreshStaffList(); }
   else { setConfirmerList(list); refreshConfirmerList(); }
 }
+function nameMgrField(r){ return nameMgrMode === "staff" ? (r.staff||"") : (r.confirmer||""); }
 function nameMgrCount(name){
-  const recs = loadRecords();
-  return nameMgrMode === "staff"
-    ? recs.filter(r => r.staff === name).length
-    : recs.filter(r => (r.confirmer||"") === name).length;
+  return loadRecords().filter(r => nameMgrField(r) === name).length;
+}
+/* リストには無いのに記録だけ残っている名前（打ち間違い・旧名）を拾う */
+function nameMgrOrphans(){
+  const inList = {};
+  nameMgrGet().forEach(n => { inList[n] = 1; });
+  const out = [];
+  loadRecords().forEach(r => {
+    const v = nameMgrField(r);
+    if(v && !inList[v] && out.indexOf(v) < 0) out.push(v);
+  });
+  return out;
+}
+function nameMgrRow(n, orphan){
+  const cnt = nameMgrCount(n);
+  return `<div class="sm-row">
+    <span class="sm-name">${esc(n)}${orphan ? '<span class="sm-badge">リスト外</span>' : ""}<small>${cnt ? "記録 " + cnt + "件" : "記録なし"}</small></span>
+    <span class="sm-acts">
+      <button type="button" class="btn-mini e" data-renamestaff="${esc(n)}" title="名前を変更／まとめる">✏️</button>
+      ${orphan ? "" : `<button type="button" class="btn-mini d" data-delstaff="${esc(n)}" title="削除">🗑️</button>`}
+    </span>
+  </div>`;
 }
 function renderStaffMgr(){
   const list = nameMgrGet();
+  const orphans = nameMgrOrphans();
   const el = document.getElementById("staffMgrList");
-  el.innerHTML = list.length ? list.map(n => {
-    const cnt = nameMgrCount(n);
-    return `<div class="sm-row">
-      <span class="sm-name">${esc(n)}<small>${cnt ? "記録 " + cnt + "件" : "記録なし"}</small></span>
-      <button type="button" class="btn-mini d" data-delstaff="${esc(n)}" title="削除">🗑️</button>
-    </div>`;
-  }).join("") : `<p style="color:var(--muted);font-size:13px;margin:6px 0;">${nameMgrLabel()}がいません。下の欄から追加してください。</p>`;
+  let html = list.map(n => nameMgrRow(n, false)).join("");
+  if(orphans.length){
+    html += `<div class="sm-note">下は「記録にだけある名前」です（辞めた方や、打ち間違い）。打ち間違いなら ✏️ で正しい名前にまとめられます。そのままでも集計に影響はありません。</div>`
+      + orphans.map(n => nameMgrRow(n, true)).join("");
+  }
+  if(!list.length && !orphans.length){
+    html = `<p style="color:var(--muted);font-size:13px;margin:6px 0;">${nameMgrLabel()}がいません。下の欄から追加してください。</p>`;
+  }
+  el.innerHTML = html;
   el.querySelectorAll("[data-delstaff]").forEach(b =>
     b.addEventListener("click", () => delStaff(b.dataset.delstaff)));
+  el.querySelectorAll("[data-renamestaff]").forEach(b =>
+    b.addEventListener("click", () => renameStaff(b.dataset.renamestaff)));
   document.getElementById("staffNewName").placeholder = "新しい" + nameMgrLabel() + "の名前";
   document.getElementById("nameMgrHint").textContent = nameMgrMode === "staff"
     ? "報告のときに選べる名前です" : "確認者の入力欄に出てくる名前です";
@@ -1553,6 +1580,56 @@ function addStaff(){
   inp.value = ""; err.textContent = "";
   renderStaffMgr();
   toast("✅ " + name + " さんを追加しました");
+}
+/* 名前の変更／統合：リストも、これまでの記録もまとめて書き換える（保存＆送信は1回だけ） */
+function renameStaff(oldName){
+  const label = nameMgrLabel();
+  const typed = prompt(
+    "「" + oldName + "」の正しい" + label + "名を入力してください。" + String.fromCharCode(10) +
+    "すでにある名前を入れると、その人にまとめられます。", oldName);
+  if(typed === null) return;
+  const newName = typed.trim();
+  if(!newName){ toast("名前を入力してください", true); return; }
+  if(newName === oldName) return;
+
+  const list = nameMgrGet();
+  const merging = list.indexOf(newName) >= 0;
+  const cnt = nameMgrCount(oldName);
+  const head = merging
+    ? "「" + oldName + "」を「" + newName + "」にまとめます。"
+    : "「" + oldName + "」を「" + newName + "」に変更します。";
+  const body = cnt ? String.fromCharCode(10) + "これまでの記録 " + cnt + "件の" + label + "も書き換わります。" : "";
+  if(!confirm(head + body + String.fromCharCode(10) + "よろしいですか？")) return;
+
+  // 1) 記録を書き換え（設定行はそのまま）
+  const all = loadAll();
+  let changed = 0;
+  all.forEach(r => {
+    if(isSettingsRow(r)) return;
+    if(nameMgrField(r) === oldName){
+      if(nameMgrMode === "staff") r.staff = newName; else r.confirmer = newName;
+      changed++;
+    }
+  });
+  // 2) リストを書き換え（重複は作らない）
+  const next = [];
+  list.forEach(n => {
+    const v = (n === oldName) ? newName : n;
+    if(next.indexOf(v) < 0) next.push(v);
+  });
+  if(next.indexOf(newName) < 0) next.push(newName);   // リスト外の名前を直したとき
+  const settings = Object.assign({}, getSettings());
+  if(nameMgrMode === "staff") settings.staff = next; else settings.confirmers = next;
+  // 3) まとめて1回だけ保存＆クラウドへ送信
+  const rest = all.filter(r => !isSettingsRow(r));
+  rest.push({ id:SETTINGS_ID, date:"", staff:"", confirmer:"", prep:false, cleanup:false,
+    sizes:{}, fee:0, towels:{}, memo:JSON.stringify(settings), createdAt:new Date().toISOString() });
+  writeAll(rest);
+
+  if(nameMgrMode === "staff") refreshStaffList(); else refreshConfirmerList();
+  renderStaffMgr();
+  if(typeof renderList === "function") renderList();
+  toast("✅ " + (merging ? "まとめました" : "名前を変更しました") + (changed ? "（記録 " + changed + "件）" : ""));
 }
 function delStaff(name){
   const cnt = nameMgrCount(name);
