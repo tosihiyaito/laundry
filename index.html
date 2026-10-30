@@ -654,9 +654,31 @@ function getSettings(){
 function saveSettings(patch){
   const next = Object.assign({}, getSettings(), patch);
   const rest = loadAll().filter(r => !isSettingsRow(r));
-  rest.push({ id:SETTINGS_ID, date:"", staff:"", confirmer:"", prep:false, cleanup:false,
-    sizes:{}, fee:0, towels:{}, memo:JSON.stringify(next), createdAt:new Date().toISOString() });
+  rest.push(settingsRowOf(next));
   writeAll(rest);
+}
+function settingsRowOf(obj){
+  return { id:SETTINGS_ID, date:"", staff:"", confirmer:"", prep:false, cleanup:false,
+    sizes:{}, fee:0, towels:{}, memo:JSON.stringify(obj || {}), createdAt:new Date().toISOString() };
+}
+/* 削除した記録の「消した印」。これが無いと、他の端末やクラウドに残っていた分を
+   次の読み込みで拾い直してしまい、消したはずの記録が一覧に復活する。 */
+function getDeletedMap(){
+  const o = getSettings();
+  return (o && o.deleted && typeof o.deleted === "object") ? o.deleted : {};
+}
+/* 記録を消して「消した印」を付ける。保存とクラウド送信は1回だけ（競合を防ぐ） */
+function removeRecords(ids){
+  const kill = {};
+  (Array.isArray(ids) ? ids : [ids]).forEach(id => { if(id) kill[id] = 1; });
+  const stamp = new Date().toISOString();
+  const deleted = Object.assign({}, getDeletedMap());
+  Object.keys(kill).forEach(id => { deleted[id] = stamp; });
+  const next = Object.assign({}, getSettings(), {deleted: deleted});
+  const rest = loadAll().filter(r => !isSettingsRow(r) && !kill[r.id]);
+  rest.push(settingsRowOf(next));
+  writeAll(rest);
+  return Object.keys(kill).length;
 }
 function getStaffList(){
   const o = getSettings();
@@ -695,17 +717,33 @@ function cloudPull(done){
       if(data && data.ok && Array.isArray(data.records)){
         const local = loadAll();
         const byId = {}, cloudIds = {};
-        let hadJunk = false;
+        let hadJunk = false, hadDeleted = false;
         local.forEach(r => { if(r && r.id) byId[r.id] = r; });
+        let cloudSettings = null;
         data.records.forEach(r => {
           if(!r || !r.id) return;
           if(isJunkId(r.id)){ hadJunk = true; return; }   // 混入テスト記録はクラウドから取り込まない
-          if(r.date) r.date = normIsoDate(r.date); byId[r.id] = r; cloudIds[r.id] = 1;
+          cloudIds[r.id] = 1;
+          if(isSettingsRow(r)){ cloudSettings = r; return; }   // 設定行はこの下でまとめる
+          if(r.date) r.date = normIsoDate(r.date); byId[r.id] = r;
+        });
+        /* 設定（名前リスト・消した印）を端末とクラウドで合わせる。
+           「消した印」は両方を足すので、どれか1台で消せば全部の端末から消える。 */
+        const localSet = getSettings();
+        let cloudSet = {};
+        if(cloudSettings && cloudSettings.memo){
+          try{ const o = JSON.parse(cloudSettings.memo); if(o && typeof o === "object") cloudSet = o; }catch(e){}
+        }
+        const deleted = Object.assign({}, localSet.deleted || {}, cloudSet.deleted || {});
+        byId[SETTINGS_ID] = settingsRowOf(Object.assign({}, localSet, cloudSet, {deleted: deleted}));
+        /* 消した記録は取り込まない（クラウドに残っていれば、このあと正しいデータで上書きする） */
+        Object.keys(deleted).forEach(id => {
+          if(byId[id]){ delete byId[id]; if(cloudIds[id]) hadDeleted = true; }
         });
         localStorage.setItem(STORE_KEY, JSON.stringify(Object.keys(byId).map(k => byId[k])));
         setSyncStatus("☁️ 同期済み");
         // 端末だけにあった分、またはクラウドに混入テストがあった場合は、正しいデータでクラウドを上書き
-        if(hadJunk || local.some(r => r && r.id && !cloudIds[r.id])) cloudPush();
+        if(hadJunk || hadDeleted || local.some(r => r && r.id && !cloudIds[r.id])) cloudPush();
         finish(true);
       } else { setSyncStatus("⚠️ 同期エラー"); finish(false); }
     }catch(e){ setSyncStatus("⚠️ 同期エラー"); finish(false); }
@@ -1041,7 +1079,7 @@ function delRecord(id){
   const r = loadRecords().find(x => x.id === id);
   const label = r ? `${formatDateJp(r.date)}・${r.staff}さん の記録` : "この記録";
   if(!confirm(label + "を削除します。よろしいですか？")) return;
-  saveRecords(loadRecords().filter(x => x.id !== id));
+  removeRecords([id]);
   if(editingId === id) resetForm();
   renderList();
   toast("🗑️ 削除しました");
@@ -1622,8 +1660,7 @@ function renameStaff(oldName){
   if(nameMgrMode === "staff") settings.staff = next; else settings.confirmers = next;
   // 3) まとめて1回だけ保存＆クラウドへ送信
   const rest = all.filter(r => !isSettingsRow(r));
-  rest.push({ id:SETTINGS_ID, date:"", staff:"", confirmer:"", prep:false, cleanup:false,
-    sizes:{}, fee:0, towels:{}, memo:JSON.stringify(settings), createdAt:new Date().toISOString() });
+  rest.push(settingsRowOf(settings));
   writeAll(rest);
 
   if(nameMgrMode === "staff") refreshStaffList(); else refreshConfirmerList();
@@ -1669,14 +1706,18 @@ document.getElementById("importFile").addEventListener("change", function(e){
     if(!Array.isArray(data)){ toast("データの形式が違います", true); return; }
     const records = loadRecords();
     const ids = new Set(records.map(r => r.id));
-    let added = 0;
+    const deleted = getDeletedMap();
+    let added = 0, skipped = 0;
     data.forEach(r => {
-      if(r && r.id && !ids.has(r.id)){ records.push(r); ids.add(r.id); added++; }
+      if(!r || !r.id || ids.has(r.id)) return;
+      if(deleted[r.id]){ skipped++; return; }   // 一度消した記録は取り込み直さない
+      records.push(r); ids.add(r.id); added++;
     });
     saveRecords(records);
     refreshStaffList(); refreshConfirmerList();
     renderList();
-    toast(added ? ("✅ " + added + "件を取り込みました") : "新しいデータはありませんでした");
+    const note = skipped ? ("（消した記録 " + skipped + "件は除きました）") : "";
+    toast(added ? ("✅ " + added + "件を取り込みました" + note) : ("新しいデータはありませんでした" + note));
   };
   reader.readAsText(file, "utf-8");
   e.target.value = "";
