@@ -604,6 +604,10 @@
 <div id="printArea"></div>
 
 <script>
+/* このアプリの版。更新を出すたびに stamp-version.py が自動で書き換える。
+   端末が古い画面のまま使われると、直した内容が効かないうえ、消したはずの
+   記録を送り返してしまうので、起動時にこの値を見て自動で入れ替える。 */
+const APP_VERSION = "2026-10-30-2315";
 /* =========================================================
    ▼ ここを変えると現場に合わせられます（設定）
    ========================================================= */
@@ -1819,13 +1823,46 @@ document.getElementById("csvBtn").addEventListener("click", () => {
   toast("⬇️ CSVを書き出しました");
 });
 
+/* ---------- 新しい版への自動入れ替え ---------- */
+/* 公開中のファイルを読みに行き、版が違えば（＝この画面が古ければ）
+   同期する前に新しい版へ入れ替える。更新のたびに全員に読み込み直して
+   もらわなくて済むようにするための仕組み。 */
+let lastVerCheck = 0;
+function verTried(){ try{ return sessionStorage.getItem("laundryVerTried"); }catch(e){ return null; } }
+function setVerTried(v){ try{ sessionStorage.setItem("laundryVerTried", v); }catch(e){} }
+function checkAppVersion(done){
+  lastVerCheck = Date.now();
+  fetch(location.pathname + "?v=" + Date.now(), {cache:"no-store"})   // 毎回ちがうURLにして、端末の保存分を使わせない
+    .then(r => r.ok ? r.text() : Promise.reject(new Error("ng")))
+    .then(txt => {
+      const m = txt.match(/APP_VERSION\s*=\s*"([^"]+)"/);
+      const latest = m ? m[1] : "";
+      if(!latest || latest === APP_VERSION){ done(false); return; }   // 最新ならそのまま使う
+      if(verTried() === latest){ done(false); return; }               // 入れ替えに失敗したとき繰り返さない
+      setVerTried(latest);
+      setSyncStatus("⬆️ 新しい版に更新中…");
+      location.replace(location.pathname + "?v=" + encodeURIComponent(latest));
+      done(true);
+    })
+    .catch(() => done(false));   // つながらないときは、そのまま使う
+}
+
 /* ---------- 起動 ---------- */
 initSelectsAndDatalist();
 resetForm();
-cloudPull(ok => {
-  const v = (document.querySelector(".view.active")||{}).id;
-  if(ok && v === "view-list") renderList();
-  if(ok && v === "view-summary") renderSummary();
+checkAppVersion(updating => {
+  if(updating) return;   // 新しい版へ入れ替え中。古い画面のまま同期させない
+  cloudPull(ok => {
+    const v = (document.querySelector(".view.active")||{}).id;
+    if(ok && v === "view-list") renderList();
+    if(ok && v === "view-summary") renderSummary();
+  });
+});
+/* 開きっぱなしの端末のために、しばらくぶりに画面に戻ったときも確認する */
+document.addEventListener("visibilitychange", () => {
+  if(document.visibilityState !== "visible") return;
+  if(Date.now() - lastVerCheck < 30*60*1000) return;   // 30分に1回まで
+  checkAppVersion(() => {});
 });
 </script>
 </body>
