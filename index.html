@@ -316,6 +316,11 @@
   .modal-err{color:var(--danger);font-size:13px;font-weight:700;min-height:18px;margin-top:8px;}
   .modal-btns{display:flex;gap:10px;margin-top:14px;}
   .modal-btns .btn{flex:1;width:auto;}
+  /* 二重登録のお知らせ */
+  .dup-msg{margin:4px 0 2px;font-size:14px;color:var(--text);font-weight:700;line-height:1.5;}
+  .dup-note{display:none;margin:2px 0 10px;padding:10px 12px;border-radius:10px;font-size:13px;font-weight:700;
+    line-height:1.5;background:#fff7ed;border:1px solid #fdba74;color:#9a3412;}
+  .dup-note.show{display:block;}
   /* 報告前の確認サマリー */
   .confirm-sum{text-align:left;margin:8px 0 2px;max-height:50vh;overflow:auto;}
   .confirm-sum .cs-row{display:flex;justify-content:space-between;gap:12px;padding:8px 2px;border-bottom:1px solid var(--border);font-size:14px;}
@@ -406,6 +411,8 @@
             <select id="f-staff" required></select>
           </div>
         </div>
+
+        <div class="dup-note" id="dupNote"></div>
 
         <div class="row-task">
           <div class="task-chks">
@@ -540,6 +547,19 @@
     <div class="modal-btns">
       <button type="button" class="btn btn-ghost" id="confirmEdit">✏️ 修正する</button>
       <button type="button" class="btn btn-primary" id="confirmOk">✅ 報告する</button>
+    </div>
+  </div>
+</div>
+
+<!-- 同じ日・同じ人の二重登録を止める -->
+<div class="modal-overlay" id="dupModal">
+  <div class="modal">
+    <div class="modal-ico">⚠️</div>
+    <h3>すでに登録されています</h3>
+    <div class="dup-msg" id="dupMsg"></div>
+    <div class="modal-btns">
+      <button type="button" class="btn btn-ghost" id="dupEdit">✏️ 登録済みを直す</button>
+      <button type="button" class="btn btn-primary" id="dupClose">閉じる</button>
     </div>
   </div>
 </div>
@@ -925,10 +945,47 @@ function resetForm(){
   document.getElementById("editBanner").classList.remove("show");
   document.getElementById("submitBtn").textContent = "この内容で報告する";
   updateWasherCost();
+  refreshDupNote();
 }
 
 /* ---------- 送信（新規 / 更新） ---------- */
 let editingId = null;
+
+/* 同じ日・同じ担当者の記録をさがす（編集中の記録は自分自身なので除く）。
+   1日1人1件が決まりなので、2件目は登録させずにお知らせする。 */
+function findSameDayRecord(date, staff, exceptId){
+  const d = normIsoDate(date), s = (staff || "").trim();
+  if(!d || !s) return null;
+  return loadRecords().find(r => r && r.date === d && (r.staff || "").trim() === s && r.id !== exceptId) || null;
+}
+function dupMessage(rec){
+  const when = (rec.date === todayStr()) ? "本日" : formatDateJp(rec.date);
+  return esc(when) + "の" + esc(rec.staff) + "さんの勤務の登録は、すでに行っています。<br>" +
+         "2重登録になるので、登録しなくて大丈夫です。";
+}
+let dupTargetId = null;
+function showDupModal(rec){
+  dupTargetId = rec.id;
+  document.getElementById("dupMsg").innerHTML = dupMessage(rec);
+  document.getElementById("dupModal").classList.add("show");
+}
+function closeDupModal(){ document.getElementById("dupModal").classList.remove("show"); dupTargetId = null; }
+document.getElementById("dupClose").addEventListener("click", closeDupModal);
+document.getElementById("dupModal").addEventListener("click", e => { if(e.target.id === "dupModal") closeDupModal(); });
+document.getElementById("dupEdit").addEventListener("click", () => {
+  const id = dupTargetId; closeDupModal(); if(id) startEdit(id);   // 登録済みの記録を編集画面に出す
+});
+/* 日付と担当者を選んだ時点で、すでに登録があれば入力画面で知らせる */
+function refreshDupNote(){
+  const el = document.getElementById("dupNote");
+  if(!el) return;
+  const dup = findSameDayRecord(document.getElementById("f-date").value,
+                                document.getElementById("f-staff").value, editingId);
+  if(dup){ el.innerHTML = "⚠️ " + dupMessage(dup); el.classList.add("show"); }
+  else{ el.textContent = ""; el.classList.remove("show"); }
+}
+document.getElementById("f-date").addEventListener("change", refreshDupNote);
+document.getElementById("f-staff").addEventListener("change", refreshDupNote);
 
 // 送信＝まず入力チェック → 確認画面を表示（実際の保存は確認画面の「報告する」で）
 document.getElementById("recForm").addEventListener("submit", function(e){
@@ -949,6 +1006,8 @@ document.getElementById("recForm").addEventListener("submit", function(e){
     if(feeRaw === ""){ toast("乾燥機の代金を入力してください", true); return; }
     if(TOWEL_TYPES.reduce((s,t)=> s + (towels[t]||0), 0) === 0){ toast("タオルの枚数を入力してください", true); return; }
   }
+  const dup = findSameDayRecord(date, staff, editingId);
+  if(dup){ refreshDupNote(); showDupModal(dup); return; }   // 1日1人1件：2件目は登録させない
   showConfirmModal();
 });
 // 確認画面のサマリーを組み立て
@@ -1011,6 +1070,8 @@ function doSaveReport(){
     toast("✅ 更新しました");
     showView("list");
   }else{
+    const dup = findSameDayRecord(date, staff, null);   // 他の端末で先に登録されていた場合もここで止める
+    if(dup){ showDupModal(dup); return; }
     records.push({id:uid(), date, staff, confirmer, prep, cleanup, sizes, fee, towels, memo, createdAt:new Date().toISOString()});
     saveRecords(records);
     resetForm();
@@ -1073,6 +1134,7 @@ function startEdit(id){
   editingId = id;
   document.getElementById("editBanner").classList.add("show");
   document.getElementById("submitBtn").textContent = "更新する";
+  refreshDupNote();
   showView("form");
 }
 function delRecord(id){
